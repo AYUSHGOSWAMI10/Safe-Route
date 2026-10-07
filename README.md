@@ -36,7 +36,7 @@ You need Node.js and npm. MongoDB is optional for the sample-data demo.
 
 4. Open the Vite URL shown in the terminal, usually http://localhost:5173.
 
-To start only the backend, run `npm start --prefix server`. The API listens on port 5000 by default.
+To start only the backend, run `npm start --prefix server`. The API listens on port 5001 by default. If that port is busy too, set another `PORT` in `server/.env`; update the `/api` proxy port in `client/vite.config.js` to match.
 
 ## API
 
