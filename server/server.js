@@ -5,13 +5,19 @@ const mongoose = require("mongoose");
 const Road = require("./models/Road");
 const sampleRoads = require("./data/sampleRoads");
 const routeRoutes = require("./routes/routeRoutes");
+const healthRoutes = require("./routes/healthRoutes");
+const authRoutes = require("./routes/authRoutes");
 
 const app = express();
 const port = process.env.PORT || 5001;
 
 app.use(cors());
 app.use(express.json());
+
+// Routes
+app.use("/api/auth", authRoutes);
 app.use("/api/routes", routeRoutes);
+app.use("/api/health", healthRoutes);
 
 async function connectToMongo() {
   const uri = process.env.MONGODB_URI;
