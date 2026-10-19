@@ -3,3 +3,6 @@ client/dist/
 .env
 .DS_Store
 npm-debug.log*
+
+# Local environment secrets
+server/.env
