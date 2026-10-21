@@ -67,4 +67,4 @@ function findWalkingRoute(req, res) {
   }
 }
 
-module.exports = { findWalkingRoute };
+module.exports = { findWalkingRoute, loadGraph };
