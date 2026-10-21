@@ -1,7 +1,10 @@
 const { loadGraph } = require("./walkingRouteController");
 const { findRoute, validModes } = require("../data/ingest/routingEngine");
+const { buildComponents } = require("./connectedComponents");
 
 const MAX_SNAP_M = 150;
+let cachedComponents;
+let cachedAdjacency;
 
 function validCoordinate(value) {
   return value && typeof value === "object" && !Array.isArray(value) &&
@@ -19,11 +22,31 @@ function haversineM(a, b) {
   return 6371000 * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
 }
 
-function nearestNode(nodes, coordinate) {
-  let best = null;
+function getCandidates(nodes, coordinate) {
+  const candidates = [];
+  let nearestDistanceM = Infinity;
   for (const [id, point] of Object.entries(nodes)) {
     const distanceM = haversineM(coordinate, point);
-    if (!best || distanceM < best.distanceM) best = { id, distanceM };
+    if (distanceM < nearestDistanceM) nearestDistanceM = distanceM;
+    if (distanceM <= MAX_SNAP_M) candidates.push({ id, distanceM });
+  }
+  candidates.sort((a, b) => a.distanceM - b.distanceM);
+  return { candidates, nearestDistanceM };
+}
+
+function selectConnectedPair(starts, ends, components) {
+  const nearestEndByComponent = new Map();
+  for (const end of ends) {
+    const component = components.get(end.id);
+    const current = nearestEndByComponent.get(component);
+    if (!current || end.distanceM < current.distanceM) nearestEndByComponent.set(component, end);
+  }
+  let best = null;
+  for (const start of starts) {
+    const end = nearestEndByComponent.get(components.get(start.id));
+    if (!end || start.id === end.id) continue;
+    const snapCost = start.distanceM + end.distanceM;
+    if (!best || snapCost < best.snapCost) best = { start, end, snapCost };
   }
   return best;
 }
@@ -39,18 +62,27 @@ function findWalkingRouteByCoordinates(req, res) {
 
   try {
     const { graph, adjacency } = loadGraph();
-    const start = nearestNode(graph.nodes, source);
-    const end = nearestNode(graph.nodes, destination);
-    if (!start || !end || start.distanceM > MAX_SNAP_M || end.distanceM > MAX_SNAP_M) {
+    if (cachedAdjacency !== adjacency) {
+      cachedComponents = buildComponents(adjacency);
+      cachedAdjacency = adjacency;
+    }
+    const startCandidates = getCandidates(graph.nodes, source);
+    const endCandidates = getCandidates(graph.nodes, destination);
+    if (!startCandidates.candidates.length || !endCandidates.candidates.length) {
       return res.status(422).json({
         error: "One or both coordinates are too far from the mapped walking network.",
         maxSnapDistanceM: MAX_SNAP_M,
-        snapDistancesM: { source: start ? Math.round(start.distanceM) : null, destination: end ? Math.round(end.distanceM) : null }
+        snapDistancesM: {
+          source: Number.isFinite(startCandidates.nearestDistanceM) ? Math.round(startCandidates.nearestDistanceM) : null,
+          destination: Number.isFinite(endCandidates.nearestDistanceM) ? Math.round(endCandidates.nearestDistanceM) : null
+        }
       });
     }
-    if (start.id === end.id) {
-      return res.status(422).json({ error: "Both coordinates snap to the same graph node; choose points farther apart." });
+    const pair = selectConnectedPair(startCandidates.candidates, endCandidates.candidates, cachedComponents);
+    if (!pair) {
+      return res.status(422).json({ error: "No distinct connected walking nodes found within snapping range.", maxSnapDistanceM: MAX_SNAP_M });
     }
+    const { start, end } = pair;
     const result = findRoute(adjacency, start.id, end.id, preference);
     if (!result) return res.status(404).json({ error: "No connected walking route found between the snapped nodes." });
 
@@ -77,7 +109,7 @@ function findWalkingRouteByCoordinates(req, res) {
         weightedCost: Number(result.weightedCost.toFixed(2)),
         trafficExposureDistanceM
       },
-      note: "Route follows snapped OSM nodes. Snapping legs are not included in distance; safety data is partial and unverified."
+      note: "Route follows connected snapped OSM nodes. Snapping legs are not included in distance; safety data is partial and unverified."
     });
   } catch (error) {
     console.error("Coordinate walking route error:", error);
