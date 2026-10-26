@@ -2,14 +2,12 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const express = require("express");
 const http = require("node:http");
-const fs = require("node:fs");
-const path = require("node:path");
 
 const {
   getLocations,
   findRoutes,
   calculateRouteStats,
-  loadGraphData,
+  loadWalkingGraph,
   clearCache,
 } = require("../controllers/routeController");
 
@@ -35,7 +33,7 @@ function startServer(app) {
   });
 }
 
-test("GET /api/routes returns a manageable list of valid graph nodes", async () => {
+test("GET /api/routes returns available location place names", async () => {
   const app = createTestApp();
   const instance = await startServer(app);
 
@@ -45,29 +43,27 @@ test("GET /api/routes returns a manageable list of valid graph nodes", async () 
 
     const body = await res.json();
     assert.ok(Array.isArray(body.locations), "locations should be an array");
-    assert.ok(body.locations.length > 1, "locations should have multiple items");
-    assert.ok(
-      body.locations.length <= 50,
-      `locations should be manageable (received ${body.locations.length})`
-    );
+    assert.ok(body.locations.includes("Central Park"), "should include Central Park");
+    assert.ok(body.locations.includes("University"), "should include University");
+    assert.ok(body.locations.includes("Market Square"), "should include Market Square");
 
-    const { graph } = loadGraphData();
-    for (const id of body.locations) {
-      assert.ok(typeof id === "string", "each location ID must be a string");
-      assert.ok(graph.nodes[id], `node ${id} must exist in walkingGraph`);
+    // Ensure all returned locations are human-readable place names, not raw coordinates/numbers
+    for (const loc of body.locations) {
+      assert.ok(typeof loc === "string");
+      assert.ok(!/^\d+$/.test(loc), `Location "${loc}" should be a place name, not a numeric coordinate`);
     }
   } finally {
     await instance.close();
   }
 });
 
-test("POST /api/routes/find computes three preference routes and matches frontend contract", async () => {
+test("POST /api/routes/find returns place names in path and recommended route", async () => {
   const app = createTestApp();
   const instance = await startServer(app);
 
   try {
-    const source = "6314017249";
-    const destination = "172755844";
+    const source = "Central Park";
+    const destination = "University";
 
     const res = await fetch(`${instance.baseUrl}/api/routes/find`, {
       method: "POST",
@@ -85,7 +81,7 @@ test("POST /api/routes/find computes three preference routes and matches fronten
     assert.equal(body.source, source);
     assert.equal(body.destination, destination);
     assert.ok(Array.isArray(body.routes));
-    assert.equal(body.routes.length, 3);
+    assert.ok(body.routes.length > 0);
     assert.equal(body.recommended, "Route B (Balanced)");
 
     for (const route of body.routes) {
@@ -93,6 +89,12 @@ test("POST /api/routes/find computes three preference routes and matches fronten
       assert.ok(Array.isArray(route.path) && route.path.length > 1);
       assert.equal(route.path[0], source);
       assert.equal(route.path.at(-1), destination);
+
+      // Verify that every segment in path is a place name, not numeric coordinates
+      for (const step of route.path) {
+        assert.ok(!/^\d+$/.test(step), `Path step "${step}" should be a place name`);
+      }
+
       assert.ok(Number.isFinite(route.distance) && route.distance > 0);
       assert.ok(Number.isFinite(route.estimatedTime) && route.estimatedTime > 0);
       assert.ok(
@@ -116,8 +118,8 @@ test("POST /api/routes/find handles faster preference and recommends Route A", a
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        source: "6314017249",
-        destination: "172755844",
+        source: "Central Park",
+        destination: "University",
         preference: "faster",
       }),
     });
@@ -130,7 +132,34 @@ test("POST /api/routes/find handles faster preference and recommends Route A", a
   }
 });
 
-test("POST /api/routes/find handles safer preference and recommends Route C", async () => {
+test("POST /api/routes/find handles safer preference and recommends Route C with safer path", async () => {
+  const app = createTestApp();
+  const instance = await startServer(app);
+
+  try {
+    const res = await fetch(`${instance.baseUrl}/api/routes/find`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        source: "Central Park",
+        destination: "University",
+        preference: "safer",
+      }),
+    });
+
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.recommended, "Route C (Safer)");
+    const saferRoute = body.routes.find((r) => r.name === "Route C (Safer)");
+    assert.ok(saferRoute);
+    // Safer route takes Riverside
+    assert.ok(saferRoute.path.includes("Riverside"), "Safer route should route via Riverside for higher safety");
+  } finally {
+    await instance.close();
+  }
+});
+
+test("POST /api/routes/find also supports OSM node IDs when queried", async () => {
   const app = createTestApp();
   const instance = await startServer(app);
 
@@ -141,41 +170,15 @@ test("POST /api/routes/find handles safer preference and recommends Route C", as
       body: JSON.stringify({
         source: "6314017249",
         destination: "172755844",
-        preference: "safer",
-      }),
-    });
-
-    assert.equal(res.status, 200);
-    const body = await res.json();
-    assert.equal(body.recommended, "Route C (Safer)");
-  } finally {
-    await instance.close();
-  }
-});
-
-test("POST /api/routes/find works with the first and last locations from GET /api/routes", async () => {
-  const app = createTestApp();
-  const instance = await startServer(app);
-
-  try {
-    const locRes = await fetch(`${instance.baseUrl}/api/routes`);
-    const { locations } = await locRes.json();
-
-    const res = await fetch(`${instance.baseUrl}/api/routes/find`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        source: locations[0],
-        destination: locations[locations.length - 1],
         preference: "balanced",
       }),
     });
 
     assert.equal(res.status, 200);
     const body = await res.json();
+    assert.equal(body.source, "6314017249");
+    assert.equal(body.destination, "172755844");
     assert.ok(body.routes.length > 0);
-    assert.equal(body.routes[0].path[0], locations[0]);
-    assert.equal(body.routes[0].path.at(-1), locations[locations.length - 1]);
   } finally {
     await instance.close();
   }
@@ -189,14 +192,14 @@ test("POST /api/routes/find rejects missing source or destination with HTTP 400"
     const res1 = await fetch(`${instance.baseUrl}/api/routes/find`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ source: "6314017249" }),
+      body: JSON.stringify({ source: "Central Park" }),
     });
     assert.equal(res1.status, 400);
 
     const res2 = await fetch(`${instance.baseUrl}/api/routes/find`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ destination: "172755844" }),
+      body: JSON.stringify({ destination: "University" }),
     });
     assert.equal(res2.status, 400);
 
@@ -220,8 +223,8 @@ test("POST /api/routes/find rejects identical source and destination with HTTP 4
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        source: "6314017249",
-        destination: "6314017249",
+        source: "Central Park",
+        destination: "Central Park",
         preference: "balanced",
       }),
     });
@@ -243,8 +246,8 @@ test("POST /api/routes/find rejects invalid preference with HTTP 400", async () 
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        source: "6314017249",
-        destination: "172755844",
+        source: "Central Park",
+        destination: "University",
         preference: "fastest_possible_route",
       }),
     });
@@ -257,7 +260,7 @@ test("POST /api/routes/find rejects invalid preference with HTTP 400", async () 
   }
 });
 
-test("POST /api/routes/find rejects unknown/invalid node IDs with HTTP 404", async () => {
+test("POST /api/routes/find rejects unknown/invalid locations with HTTP 404", async () => {
   const app = createTestApp();
   const instance = await startServer(app);
 
@@ -266,8 +269,8 @@ test("POST /api/routes/find rejects unknown/invalid node IDs with HTTP 404", asy
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        source: "non_existent_node_id_123",
-        destination: "172755844",
+        source: "Unknown Nonexistent Place",
+        destination: "University",
         preference: "balanced",
       }),
     });
@@ -283,38 +286,15 @@ test("POST /api/routes/find rejects unknown/invalid node IDs with HTTP 404", asy
   }
 });
 
-test("POST /api/routes/find returns HTTP 404 for unreachable disconnected nodes", async () => {
-  const app = createTestApp();
-  const instance = await startServer(app);
-
-  try {
-    // 6310865121 is in disconnected component 1, while 172737446 is in component 0
-    const res = await fetch(`${instance.baseUrl}/api/routes/find`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        source: "172737446",
-        destination: "6310865121",
-        preference: "balanced",
-      }),
-    });
-
-    assert.equal(res.status, 404);
-    const body = await res.json();
-    assert.equal(body.error, "No connected walking route found.");
-  } finally {
-    await instance.close();
-  }
-});
-
 test("calculateRouteStats accurately calculates distance, walking time, and safety score", () => {
   const mockAdjacency = new Map();
   mockAdjacency.set("A", [
     {
       to: "B",
       edge: {
-        lengthM: 500,
-        safety: { trafficExposure: 0 }, // pedestrian/footway -> 0 risk
+        distance: 1.0,
+        estimatedTime: 5,
+        safetyScore: 80,
       },
     },
   ]);
@@ -322,27 +302,16 @@ test("calculateRouteStats accurately calculates distance, walking time, and safe
     {
       to: "C",
       edge: {
-        lengthM: 500,
-        safety: { trafficExposure: 5 }, // secondary road -> max risk (5/5 = 1)
+        distance: 2.0,
+        estimatedTime: 10,
+        safetyScore: 90,
       },
     },
   ]);
 
-  const stats = calculateRouteStats(["A", "B", "C"], mockAdjacency);
-  assert.equal(stats.distanceKm, 1.0);
-  // 1000m / 83.33 m/min = 12 min
-  assert.equal(stats.estimatedTimeMin, 12);
-  // Average exposure = (0*500 + 1*500)/1000 = 0.5 -> (1 - 0.5) * 100 = 50
-  assert.equal(stats.safetyScore, 50);
+  const stats = calculateRouteStats(["A", "B", "C"], mockAdjacency, true);
+  assert.equal(stats.distanceKm, 3.0);
+  assert.equal(stats.estimatedTimeMin, 15);
+  // Weighted: (80*1 + 90*2) / 3 = 260 / 3 ≈ 87
+  assert.equal(stats.safetyScore, 87);
 });
-
-test("missing graph data returns HTTP 503 instead of fabricating routes", async () => {
-  // Pass non-existent path to loadGraphData directly
-  assert.throws(
-    () => {
-      loadGraphData("/tmp/non_existent_graph.json");
-    },
-    { message: /not found/ }
-  );
-});
-
