@@ -5,8 +5,10 @@ const mongoose = require("mongoose");
 const Road = require("./models/Road");
 const sampleRoads = require("./data/sampleRoads");
 const routeRoutes = require("./routes/routeRoutes");
-const healthRoutes = require("./routes/healthRoutes");
+const adminRoutes = require("./routes/adminRoutes");
 const authRoutes = require("./routes/authRoutes");
+const healthRoutes = require("./routes/healthRoutes");
+const historyRoutes = require("./routes/historyRoutes");
 
 const app = express();
 const port = process.env.PORT || 5001;
@@ -16,8 +18,10 @@ app.use(express.json());
 
 // Routes
 app.use("/api/auth", authRoutes);
+app.use("/api/admin", adminRoutes);
 app.use("/api/routes", routeRoutes);
 app.use("/api/health", healthRoutes);
+app.use("/api/history", historyRoutes);
 
 async function connectToMongo() {
   const uri = process.env.MONGODB_URI;
@@ -38,7 +42,11 @@ async function connectToMongo() {
   }
 }
 
-app.listen(port, () => {
-  console.log(`SafeRoute API running at http://localhost:${port}`);
-  connectToMongo();
-});
+if (require.main === module) {
+  app.listen(port, () => {
+    console.log(`SafeRoute API running at http://localhost:${port}`);
+    connectToMongo();
+  });
+}
+
+module.exports = { app, connectToMongo };
