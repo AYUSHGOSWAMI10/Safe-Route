@@ -1,11 +1,25 @@
 const fs = require("fs");
 const path = require("path");
 const { buildAdjacency, findRoute, validModes } = require("../data/ingest/routingEngine");
+const { regionRegistry } = require("../data/ingest/regionRegistry");
 
 let cachedGraph;
 let cachedAdjacency;
 
-function loadGraph() {
+/**
+ * Load walking graph for an optional region.
+ * When regionCode is provided, uses the region registry.
+ * Falls back to the default walkingGraph.json file.
+ */
+function loadGraph(regionCode) {
+  if (regionCode) {
+    const regionData = regionRegistry.get(regionCode);
+    if (regionData) {
+      return { graph: regionData.graph, adjacency: regionData.adjacency };
+    }
+    throw new Error(`Region not found: ${regionCode}`);
+  }
+
   if (!cachedGraph) {
     const graphPath = path.join(__dirname, "../data/processed/walkingGraph.json");
     cachedGraph = JSON.parse(fs.readFileSync(graphPath, "utf8"));
@@ -15,7 +29,7 @@ function loadGraph() {
 }
 
 function findWalkingRoute(req, res) {
-  const { source, destination, preference = "faster" } = req.body || {};
+  const { source, destination, preference = "faster", regionCode } = req.body || {};
   if (typeof source !== "string" || typeof destination !== "string" || !source.trim() || !destination.trim()) {
     return res.status(400).json({ error: "source and destination must be OSM node ID strings." });
   }
@@ -27,7 +41,7 @@ function findWalkingRoute(req, res) {
   }
 
   try {
-    const { graph, adjacency } = loadGraph();
+    const { graph, adjacency } = loadGraph(regionCode);
     if (!adjacency.has(source) || !adjacency.has(destination)) {
       return res.status(404).json({ error: "One or both OSM nodes are outside the walking graph." });
     }

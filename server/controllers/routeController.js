@@ -3,6 +3,7 @@ const path = require("path");
 const Road = require("../models/Road");
 const sampleRoads = require("../data/sampleRoads");
 const { buildAdjacency, findRoute, validModes } = require("../data/ingest/routingEngine");
+const { regionRegistry } = require("../data/ingest/regionRegistry");
 
 let cachedWalkingGraph = null;
 let cachedWalkingAdjacency = null;
@@ -46,7 +47,20 @@ function buildPlaceGraph(roads) {
   return { nodes, edges };
 }
 
-function loadWalkingGraph(customPath) {
+/**
+ * Load walking graph for an optional region.
+ * When regionCode is provided, uses the region registry.
+ * Falls back to the default walkingGraph.json file.
+ */
+function loadWalkingGraph(customPath, regionCode) {
+  if (regionCode) {
+    const regionData = regionRegistry.get(regionCode);
+    if (regionData) {
+      return { graph: regionData.graph, adjacency: regionData.adjacency };
+    }
+    throw new Error(`Region not found: ${regionCode}`);
+  }
+
   if (cachedWalkingGraph && cachedWalkingAdjacency && !customPath) {
     return { graph: cachedWalkingGraph, adjacency: cachedWalkingAdjacency };
   }
@@ -152,7 +166,7 @@ async function getLocations(req, res) {
 }
 
 async function findRoutes(req, res) {
-  const { source, destination, preference = "balanced" } = req.body || {};
+  const { source, destination, preference = "balanced", regionCode } = req.body || {};
 
   const src =
     typeof source === "number"
@@ -194,7 +208,7 @@ async function findRoutes(req, res) {
     } else {
       // Fallback check against OSM walking graph if node IDs were passed
       try {
-        const walkingData = loadWalkingGraph();
+        const walkingData = loadWalkingGraph(undefined, regionCode);
         if (walkingData.adjacency.has(src) && walkingData.adjacency.has(dst)) {
           adjacency = walkingData.adjacency;
           isPlaceGraph = false;

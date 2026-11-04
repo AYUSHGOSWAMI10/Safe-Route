@@ -3,12 +3,15 @@ const express = require("express");
 const cors = require("cors");
 const mongoose = require("mongoose");
 const Road = require("./models/Road");
+const Region = require("./models/Region");
 const sampleRoads = require("./data/sampleRoads");
 const routeRoutes = require("./routes/routeRoutes");
 const adminRoutes = require("./routes/adminRoutes");
 const authRoutes = require("./routes/authRoutes");
 const healthRoutes = require("./routes/healthRoutes");
 const historyRoutes = require("./routes/historyRoutes");
+const { createRegionRoutes } = require("./routes/regionRoutes");
+const { regionRegistry } = require("./data/ingest/regionRegistry");
 
 const app = express();
 const port = process.env.PORT || 5001;
@@ -22,6 +25,7 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/routes", routeRoutes);
 app.use("/api/health", healthRoutes);
 app.use("/api/history", historyRoutes);
+app.use("/api/regions", createRegionRoutes(regionRegistry));
 
 async function connectToMongo() {
   const uri = process.env.MONGODB_URI;
@@ -37,6 +41,10 @@ async function connectToMongo() {
       await Road.insertMany(sampleRoads);
       console.log("Added sample roads to MongoDB.");
     }
+
+    // Initialize regional graph registry
+    await regionRegistry.init(Region);
+    console.log("Regional graph registry initialized.");
   } catch (error) {
     console.log("MongoDB is unavailable. Using sample roads.");
   }

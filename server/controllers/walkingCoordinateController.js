@@ -90,7 +90,7 @@ function selectConnectedPair(starts, ends, components) {
 }
 
 function findWalkingRouteByCoordinates(req, res) {
-  const { source, destination, preference = "faster" } = req.body || {};
+  const { source, destination, preference = "faster", regionCode } = req.body || {};
   if (!validCoordinate(source) || !validCoordinate(destination)) {
     return res.status(400).json({ error: "source and destination must contain valid numeric lat and lng coordinates." });
   }
@@ -99,7 +99,7 @@ function findWalkingRouteByCoordinates(req, res) {
   }
 
   try {
-    const { graph, adjacency } = loadGraph();
+    const { graph, adjacency } = loadGraph(regionCode);
     if (cachedAdjacency !== adjacency) {
       cachedComponents = buildComponents(adjacency);
       cachedAdjacency = adjacency;
