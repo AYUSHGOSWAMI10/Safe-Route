@@ -1,10 +1,14 @@
+const path = require("path");
 const { loadGraph } = require("./walkingRouteController");
 const { findRoute, validModes } = require("../data/ingest/routingEngine");
 const { buildComponents } = require("./connectedComponents");
+const { SpatialIndex } = require("../data/ingest/spatialIndex");
 
 const MAX_SNAP_M = 150;
 let cachedComponents;
 let cachedAdjacency;
+let cachedSpatialIndex;
+let cachedGraphPath;
 
 function validCoordinate(value) {
   return value && typeof value === "object" && !Array.isArray(value) &&
@@ -22,7 +26,11 @@ function haversineM(a, b) {
   return 6371000 * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
 }
 
-function getCandidates(nodes, coordinate) {
+/**
+ * Full-scan candidate search (original O(n) implementation).
+ * Used as fallback when the spatial index is unavailable.
+ */
+function getCandidatesFullScan(nodes, coordinate) {
   const candidates = [];
   let nearestDistanceM = Infinity;
   for (const [id, point] of Object.entries(nodes)) {
@@ -32,6 +40,36 @@ function getCandidates(nodes, coordinate) {
   }
   candidates.sort((a, b) => a.distanceM - b.distanceM);
   return { candidates, nearestDistanceM };
+}
+
+/**
+ * Get candidates using the spatial index when available, falling back to
+ * a full scan. The graph path is tracked so the index is rebuilt when a
+ * different graph file is loaded.
+ */
+function getCandidates(nodes, coordinate, graphPath) {
+  const index = getSpatialIndex(nodes, graphPath);
+  if (index) {
+    const result = index.query(coordinate.lat, coordinate.lng, MAX_SNAP_M);
+    if (result) return result;
+  }
+  return getCandidatesFullScan(nodes, coordinate);
+}
+
+/**
+ * Build or retrieve a cached spatial index for the given graph nodes.
+ * Rebuilds when the graph path changes (e.g. different region).
+ */
+function getSpatialIndex(nodes, graphPath) {
+  if (cachedSpatialIndex && cachedGraphPath === graphPath) {
+    return cachedSpatialIndex;
+  }
+
+  const index = new SpatialIndex();
+  index.build(nodes);
+  cachedSpatialIndex = index;
+  cachedGraphPath = graphPath;
+  return index;
 }
 
 function selectConnectedPair(starts, ends, components) {
@@ -66,8 +104,9 @@ function findWalkingRouteByCoordinates(req, res) {
       cachedComponents = buildComponents(adjacency);
       cachedAdjacency = adjacency;
     }
-    const startCandidates = getCandidates(graph.nodes, source);
-    const endCandidates = getCandidates(graph.nodes, destination);
+    const graphPath = path.join(__dirname, "../data/processed/walkingGraph.json");
+    const startCandidates = getCandidates(graph.nodes, source, graphPath);
+    const endCandidates = getCandidates(graph.nodes, destination, graphPath);
     if (!startCandidates.candidates.length || !endCandidates.candidates.length) {
       return res.status(422).json({
         error: "One or both coordinates are too far from the mapped walking network.",

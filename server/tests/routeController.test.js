@@ -10,6 +10,11 @@ const {
   loadWalkingGraph,
   clearCache,
 } = require("../controllers/routeController");
+const {
+  buildAdjacency,
+  findRoute,
+  findRouteAStar
+} = require("../data/ingest/routingEngine");
 
 function createTestApp() {
   const app = express();
@@ -314,4 +319,93 @@ test("calculateRouteStats accurately calculates distance, walking time, and safe
   assert.equal(stats.estimatedTimeMin, 15);
   // Weighted: (80*1 + 90*2) / 3 = 260 / 3 ≈ 87
   assert.equal(stats.safetyScore, 87);
+});
+
+test("findRoute uses priority queue and returns same path as expected on small graph", () => {
+  const adjacency = new Map();
+  adjacency.set("A", [{ to: "B", edge: { lengthM: 1000 } }]);
+  adjacency.set("B", [
+    { to: "A", edge: { lengthM: 1000 } },
+    { to: "C", edge: { lengthM: 500 } },
+  ]);
+  adjacency.set("C", [{ to: "B", edge: { lengthM: 500 } }]);
+
+  const result = findRoute(adjacency, "A", "C", "faster");
+  assert.ok(result);
+  assert.deepEqual(result.nodes, ["A", "B", "C"]);
+  assert.equal(result.weightedCost, 1500);
+});
+
+test("findRoute returns null when source or destination missing from adjacency", () => {
+  const adjacency = new Map();
+  adjacency.set("A", [{ to: "B", edge: { lengthM: 1000 } }]);
+  adjacency.set("B", [{ to: "A", edge: { lengthM: 1000 } }]);
+
+  assert.equal(findRoute(adjacency, "A", "Z", "faster"), null);
+  assert.equal(findRoute(adjacency, "Z", "B", "faster"), null);
+});
+
+test("findRouteAStar returns same path as findRoute when coordinates are available", () => {
+  const adjacency = new Map();
+  adjacency.set("A", [{ to: "B", edge: { lengthM: 1000 } }]);
+  adjacency.set("B", [
+    { to: "A", edge: { lengthM: 1000 } },
+    { to: "C", edge: { lengthM: 500 } },
+  ]);
+  adjacency.set("C", [{ to: "B", edge: { lengthM: 500 } }]);
+
+  const coords = {
+    A: { lat: 27.57, lng: 77.67 },
+    B: { lat: 27.571, lng: 77.671 },
+    C: { lat: 27.572, lng: 77.672 },
+  };
+
+  const dijkstra = findRoute(adjacency, "A", "C", "faster");
+  const astar = findRouteAStar(adjacency, coords, "A", "C", "faster");
+
+  assert.ok(astar);
+  assert.deepEqual(astar.nodes, dijkstra.nodes);
+  assert.equal(astar.weightedCost, dijkstra.weightedCost);
+});
+
+test("findRouteAStar falls back gracefully when coordinates are missing", () => {
+  const adjacency = new Map();
+  adjacency.set("A", [{ to: "B", edge: { lengthM: 1000 } }]);
+  adjacency.set("B", [{ to: "A", edge: { lengthM: 1000 } }]);
+
+  const coords = {}; // no coordinates available
+
+  const result = findRouteAStar(adjacency, coords, "A", "B", "faster");
+  assert.ok(result);
+  assert.deepEqual(result.nodes, ["A", "B"]);
+  assert.equal(result.weightedCost, 1000);
+});
+
+test("findRouteAStar returns null when source or destination missing", () => {
+  const adjacency = new Map();
+  adjacency.set("A", [{ to: "B", edge: { lengthM: 1000 } }]);
+  adjacency.set("B", [{ to: "A", edge: { lengthM: 1000 } }]);
+
+  const coords = {
+    A: { lat: 27.57, lng: 77.67 },
+    B: { lat: 27.571, lng: 77.671 },
+  };
+
+  assert.equal(findRouteAStar(adjacency, coords, "A", "Z", "faster"), null);
+  assert.equal(findRouteAStar(adjacency, coords, "Z", "B", "faster"), null);
+});
+
+test("invalid routing mode throws in findRouteAStar", () => {
+  const adjacency = new Map();
+  adjacency.set("A", [{ to: "B", edge: { lengthM: 1000 } }]);
+  adjacency.set("B", [{ to: "A", edge: { lengthM: 1000 } }]);
+
+  const coords = {
+    A: { lat: 27.57, lng: 77.67 },
+    B: { lat: 27.571, lng: 77.671 },
+  };
+
+  assert.throws(() => {
+    findRouteAStar(adjacency, coords, "A", "B", "invalid_mode");
+  });
 });

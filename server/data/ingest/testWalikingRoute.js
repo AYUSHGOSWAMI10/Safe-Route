@@ -1,7 +1,11 @@
 
 const fs = require("fs");
 const path = require("path");
-const { buildAdjacency, findRoute } = require("./routingEngine");
+const {
+  buildAdjacency,
+  findRoute,
+  findRouteAStar
+} = require("./routingEngine");
 
 const graphPath = path.join(
   __dirname,
@@ -14,14 +18,21 @@ const source = "6314017249";
 const destination = "172755844";
 
 const mode = process.argv[2] || "faster";
+const useAStar = process.argv.includes("--astar");
 
 const adjacency = buildAdjacency(graph);
 
-const result = findRoute(adjacency, source, destination, mode);
+let result;
+if (useAStar) {
+  result = findRouteAStar(adjacency, graph.nodes, source, destination, mode);
+} else {
+  result = findRoute(adjacency, source, destination, mode);
+}
 
 console.log("Graph nodes:", Object.keys(graph.nodes).length);
 console.log("Graph edges:", graph.edges.length);
 console.log("Routing mode:", mode);
+console.log("Algorithm:", useAStar ? "A*" : "Dijkstra (priority queue)");
 
 if (!result) {
   console.log("Route found:", false);
