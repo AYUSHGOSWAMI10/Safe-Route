@@ -81,4 +81,9 @@ function findWalkingRoute(req, res) {
   }
 }
 
-module.exports = { findWalkingRoute, loadGraph };
+function clearCache() {
+  cachedGraph = null;
+  cachedAdjacency = null;
+}
+
+module.exports = { findWalkingRoute, loadGraph, clearCache };

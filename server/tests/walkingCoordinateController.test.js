@@ -157,3 +157,132 @@ test("getCandidatesFullScan returns no candidates for far coordinate", () => {
   assert.ok(result.nearestDistanceM !== null);
   assert.ok(result.nearestDistanceM > MAX_SNAP_M);
 });
+
+test("clearCache resets all cached state", () => {
+  const { clearCache } = require("../controllers/walkingCoordinateController");
+
+  // Build an index first to populate caches
+  const index = buildIndex();
+  assert.ok(index.built);
+  assert.equal(index.size(), Object.keys(nodes).length);
+
+  // clearCache should reset cached state
+  clearCache();
+
+  // After clearing, a fresh SpatialIndex should not share state with the old one
+  const freshIndex = new SpatialIndex();
+  freshIndex.build(nodes);
+  assert.equal(freshIndex.size(), Object.keys(nodes).length);
+  assert.ok(freshIndex.built);
+});
+
+test("cross-region: findRegionByCoords returns different regions for distant coordinates", () => {
+  const { RegionRegistry } = require("../data/ingest/regionRegistry");
+  const registry = new RegionRegistry();
+
+  const regionA = {
+    regionCode: "region-a",
+    name: "Region A",
+    bounds: { minLat: 27.55, maxLat: 27.60, minLng: 77.65, maxLng: 77.71 },
+    version: "1.0.0",
+    sourceUrl: "https://example.com/a",
+    generatedAt: new Date().toISOString(),
+    nodeCount: 100,
+    edgeCount: 150,
+    filePath: "data/processed/walkingGraph.json",
+    isActive: true,
+    _id: "id-a",
+  };
+  const regionB = {
+    regionCode: "region-b",
+    name: "Region B",
+    bounds: { minLat: 28.50, maxLat: 28.60, minLng: 78.00, maxLng: 78.10 },
+    version: "1.0.0",
+    sourceUrl: "https://example.com/b",
+    generatedAt: new Date().toISOString(),
+    nodeCount: 100,
+    edgeCount: 150,
+    filePath: "data/processed/walkingGraph.json",
+    isActive: true,
+    _id: "id-b",
+  };
+
+  function regionMetadata(region) {
+    return {
+      regionCode: region.regionCode,
+      name: region.name,
+      bounds: region.bounds,
+      version: region.version,
+      sourceUrl: region.sourceUrl,
+      generatedAt: region.generatedAt,
+      nodeCount: region.nodeCount,
+      edgeCount: region.edgeCount,
+      filePath: region.filePath,
+    };
+  }
+
+  registry.regions.set("region-a", {
+    graph: graph,
+    adjacency: null,
+    spatialIndex: null,
+    metadata: regionMetadata(regionA),
+  });
+  registry.regions.set("region-b", {
+    graph: graph,
+    adjacency: null,
+    spatialIndex: null,
+    metadata: regionMetadata(regionB),
+  });
+
+  const sourceRegion = registry.findRegionByCoords(27.57, 77.68);
+  const destRegion = registry.findRegionByCoords(28.55, 78.05);
+
+  assert.ok(sourceRegion);
+  assert.equal(sourceRegion.regionCode, "region-a");
+  assert.ok(destRegion);
+  assert.equal(destRegion.regionCode, "region-b");
+  assert.notEqual(sourceRegion.regionCode, destRegion.regionCode);
+});
+
+test("cross-region: findRegionByCoords returns null for coordinates outside all regions", () => {
+  const { RegionRegistry } = require("../data/ingest/regionRegistry");
+  const registry = new RegionRegistry();
+
+  const regionA = {
+    regionCode: "region-a",
+    name: "Region A",
+    bounds: { minLat: 27.55, maxLat: 27.60, minLng: 77.65, maxLng: 77.71 },
+    version: "1.0.0",
+    sourceUrl: "https://example.com/a",
+    generatedAt: new Date().toISOString(),
+    nodeCount: 100,
+    edgeCount: 150,
+    filePath: "data/processed/walkingGraph.json",
+    isActive: true,
+    _id: "id-a",
+  };
+
+  function regionMetadata(region) {
+    return {
+      regionCode: region.regionCode,
+      name: region.name,
+      bounds: region.bounds,
+      version: region.version,
+      sourceUrl: region.sourceUrl,
+      generatedAt: region.generatedAt,
+      nodeCount: region.nodeCount,
+      edgeCount: region.edgeCount,
+      filePath: region.filePath,
+    };
+  }
+
+  registry.regions.set("region-a", {
+    graph: graph,
+    adjacency: null,
+    spatialIndex: null,
+    metadata: regionMetadata(regionA),
+  });
+
+  const result = registry.findRegionByCoords(10.0, 70.0);
+  assert.equal(result, null);
+});

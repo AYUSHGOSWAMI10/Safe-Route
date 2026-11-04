@@ -33,8 +33,19 @@ if (!osmFilePath) {
   process.exit(1);
 }
 
+const MAX_FILE_SIZE_M = 500;
+
 if (!fs.existsSync(osmFilePath)) {
   console.error(`OSM file not found: ${osmFilePath}`);
+  process.exit(1);
+}
+
+const fileSizeM = fs.statSync(osmFilePath).size / (1024 * 1024);
+if (fileSizeM > MAX_FILE_SIZE_M) {
+  console.error(
+    `OSM file too large for in-memory processing: ${fileSizeM.toFixed(1)} MB ` +
+    `(limit: ${MAX_FILE_SIZE_M} MB). Use a smaller extract or increase memory.`
+  );
   process.exit(1);
 }
 

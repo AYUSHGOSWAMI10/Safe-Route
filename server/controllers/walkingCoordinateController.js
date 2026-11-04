@@ -3,6 +3,7 @@ const { loadGraph } = require("./walkingRouteController");
 const { findRoute, validModes } = require("../data/ingest/routingEngine");
 const { buildComponents } = require("./connectedComponents");
 const { SpatialIndex } = require("../data/ingest/spatialIndex");
+const { regionRegistry } = require("../data/ingest/regionRegistry");
 
 const MAX_SNAP_M = 150;
 let cachedComponents;
@@ -98,6 +99,44 @@ function findWalkingRouteByCoordinates(req, res) {
     return res.status(400).json({ error: "preference must be faster, balanced, or safer." });
   }
 
+  // Cross-region coverage check: source and destination must be within
+  // the same supported region. Until cross-region routing is implemented,
+  // return a clear unsupported-coverage response instead of silently
+  // returning no route.
+  if (regionCode) {
+    const region = regionRegistry.get(regionCode);
+    if (!region) {
+      return res.status(422).json({
+        error: `Region '${regionCode}' is not available.`,
+      });
+    }
+    const { bounds } = region.metadata;
+    const inBounds = (c) =>
+      c.lat >= bounds.minLat && c.lat <= bounds.maxLat &&
+      c.lng >= bounds.minLng && c.lng <= bounds.maxLng;
+    if (!inBounds(source) || !inBounds(destination)) {
+      return res.status(422).json({
+        error: "One or both coordinates are outside the selected region's bounds.",
+        region: regionCode,
+      });
+    }
+  } else {
+    const sourceRegion = regionRegistry.findRegionByCoords(source.lat, source.lng);
+    const destRegion = regionRegistry.findRegionByCoords(destination.lat, destination.lng);
+    if (!sourceRegion || !destRegion) {
+      return res.status(422).json({
+        error: "One or both coordinates are outside any supported walking region.",
+      });
+    }
+    if (sourceRegion.regionCode !== destRegion.regionCode) {
+      return res.status(422).json({
+        error: "Source and destination are in different regions. Cross-region routing is not yet supported.",
+        sourceRegion: sourceRegion.regionCode,
+        destinationRegion: destRegion.regionCode,
+      });
+    }
+  }
+
   try {
     const { graph, adjacency } = loadGraph(regionCode);
     if (cachedAdjacency !== adjacency) {
@@ -156,4 +195,11 @@ function findWalkingRouteByCoordinates(req, res) {
   }
 }
 
-module.exports = { findWalkingRouteByCoordinates };
+function clearCache() {
+  cachedComponents = null;
+  cachedAdjacency = null;
+  cachedSpatialIndex = null;
+  cachedGraphPath = null;
+}
+
+module.exports = { findWalkingRouteByCoordinates, clearCache };

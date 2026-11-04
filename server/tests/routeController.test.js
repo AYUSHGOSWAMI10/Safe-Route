@@ -416,16 +416,18 @@ test("getOneWay returns null for missing oneway tag", () => {
   assert.equal(getOneWay({ tag: [{ k: "highway", v: "residential" }] }), null);
 });
 
-test("getOneWay returns 'yes' for oneway=yes", () => {
+test("getOneWay returns null for non-pedestrian highway with oneway=yes", () => {
   const { getOneWay } = require("../data/ingest/walkingRules");
-  assert.equal(getOneWay({ tag: [{ k: "oneway", v: "yes" }] }), "yes");
-  assert.equal(getOneWay({ tag: [{ k: "oneway", v: "true" }] }), "yes");
+  // Vehicle oneway=yes on non-pedestrian highway should NOT restrict pedestrians
+  assert.equal(getOneWay({ tag: [{ k: "highway", v: "residential" }, { k: "oneway", v: "yes" }] }), null);
+  assert.equal(getOneWay({ tag: [{ k: "highway", v: "secondary" }, { k: "oneway", v: "yes" }] }), null);
 });
 
-test("getOneWay returns 'reverse' for oneway=-1 or reverse", () => {
+test("getOneWay respects oneway on pedestrian-specific highways", () => {
   const { getOneWay } = require("../data/ingest/walkingRules");
-  assert.equal(getOneWay({ tag: [{ k: "oneway", v: "-1" }] }), "reverse");
-  assert.equal(getOneWay({ tag: [{ k: "oneway", v: "reverse" }] }), "reverse");
+  assert.equal(getOneWay({ tag: [{ k: "highway", v: "footway" }, { k: "oneway", v: "yes" }] }), "yes");
+  assert.equal(getOneWay({ tag: [{ k: "highway", v: "footway" }, { k: "oneway", v: "-1" }] }), "reverse");
+  assert.equal(getOneWay({ tag: [{ k: "highway", v: "path" }, { k: "oneway", v: "yes" }] }), "yes");
 });
 
 test("buildAdjacency respects oneway=yes (forward only)", () => {
@@ -495,4 +497,78 @@ test("findRoute cannot traverse one-way edge in wrong direction", () => {
   assert.ok(findRoute(adj, "A", "B", "faster"));
   // B -> A should fail (one-way)
   assert.equal(findRoute(adj, "B", "A", "faster"), null);
+});
+
+test("getOneWay returns null for vehicle oneway on non-pedestrian highway", () => {
+  const { getOneWay } = require("../data/ingest/walkingRules");
+  // Vehicle oneway=yes on residential does NOT restrict pedestrians
+  assert.equal(
+    getOneWay({ tag: [{ k: "highway", v: "residential" }, { k: "oneway", v: "yes" }] }),
+    null
+  );
+  assert.equal(
+    getOneWay({ tag: [{ k: "highway", v: "secondary" }, { k: "oneway", v: "yes" }] }),
+    null
+  );
+});
+
+test("getOneWay respects oneway on pedestrian-specific highways", () => {
+  const { getOneWay } = require("../data/ingest/walkingRules");
+  assert.equal(
+    getOneWay({ tag: [{ k: "highway", v: "footway" }, { k: "oneway", v: "yes" }] }),
+    "yes"
+  );
+  assert.equal(
+    getOneWay({ tag: [{ k: "highway", v: "pedestrian" }, { k: "oneway", v: "yes" }] }),
+    "yes"
+  );
+  assert.equal(
+    getOneWay({ tag: [{ k: "highway", v: "path" }, { k: "oneway", v: "yes" }] }),
+    "yes"
+  );
+  assert.equal(
+    getOneWay({ tag: [{ k: "highway", v: "footway" }, { k: "oneway", v: "-1" }] }),
+    "reverse"
+  );
+});
+
+test("getOneWay respects foot:oneway on non-pedestrian highways", () => {
+  const { getOneWay } = require("../data/ingest/walkingRules");
+  // foot:oneway=yes on residential restricts pedestrians one way
+  assert.equal(
+    getOneWay({ tag: [{ k: "highway", v: "residential" }, { k: "foot:oneway", v: "yes" }] }),
+    "yes"
+  );
+  // foot:oneway=-1 restricts pedestrians the other way
+  assert.equal(
+    getOneWay({ tag: [{ k: "highway", v: "secondary" }, { k: "foot:oneway", v: "-1" }] }),
+    "reverse"
+  );
+  // No foot:oneway means no restriction
+  assert.equal(
+    getOneWay({ tag: [{ k: "highway", v: "residential" }] }),
+    null
+  );
+});
+
+test("buildAdjacency allows both directions on residential with vehicle oneway=yes", () => {
+  const { buildAdjacency } = require("../data/ingest/routingEngine");
+  const graph = {
+    nodes: { A: { lat: 0, lng: 0 }, B: { lat: 0, lng: 0.001 } },
+    edges: [
+      {
+        from: "A",
+        to: "B",
+        oneway: null,
+        edge: null,
+        lengthM: 100,
+      },
+    ],
+  };
+  graph.edges[0].edge = graph.edges[0];
+
+  const adj = buildAdjacency(graph);
+  // Both directions allowed for pedestrians on non-pedestrian highway
+  assert.ok(adj.get("A").some(c => c.to === "B"));
+  assert.ok(adj.get("B").some(c => c.to === "A"));
 });

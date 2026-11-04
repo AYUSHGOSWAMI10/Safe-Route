@@ -3,7 +3,15 @@ const path = require("path");
 const Region = require("../models/Region");
 const GraphImportJob = require("../models/GraphImportJob");
 const { regionRegistry } = require("../data/ingest/regionRegistry");
-const { clearCache } = require("./routeController");
+const { clearCache: clearRouteCache } = require("./routeController");
+const { clearCache: clearWalkingRouteCache } = require("./walkingRouteController");
+const { clearCache: clearWalkingCoordinateCache } = require("./walkingCoordinateController");
+
+function clearAllCaches() {
+  clearRouteCache();
+  clearWalkingRouteCache();
+  clearWalkingCoordinateCache();
+}
 
 async function checkAdminAccess(req, res) {
   return res.status(200).json({
@@ -18,6 +26,14 @@ async function checkAdminAccess(req, res) {
 
 /**
  * Import or refresh a regional walking graph.
+ *
+ * The full import workflow (download, parse, validate, register) is not
+ * yet safe to run synchronously from an HTTP endpoint. This endpoint
+ * creates a pending job and returns honestly that the import must be
+ * triggered via the CLI scripts:
+ *   node server/data/ingest/downloadRegion.js <region>
+ *   node server/data/ingest/importRegion.js <regionCode> <osmFile>
+ *
  * Body: { regionCode, sourceUrl, operation: "import"|"refresh" }
  */
 async function importGraph(req, res) {
@@ -45,6 +61,18 @@ async function importGraph(req, res) {
     });
   }
 
+  // Validate sourceUrl if provided
+  if (sourceUrl) {
+    try {
+      new URL(sourceUrl);
+    } catch {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid sourceUrl.",
+      });
+    }
+  }
+
   try {
     // Check if region already exists (for import)
     const existing = await Region.findOne({ regionCode: cleanCode });
@@ -55,41 +83,33 @@ async function importGraph(req, res) {
       });
     }
 
-    // Create import job record
+    // Create import job with honest pending status — no fake completion.
     const job = await GraphImportJob.create({
       regionCode: cleanCode,
       operation,
-      status: "in_progress",
+      status: "pending",
       sourceUrl: sourceUrl || null,
       startedBy: req.userId,
     });
 
-    // TODO: Actual graph import would call downloadRegion/importRegion scripts
-    // For now, mark as completed (admin must run scripts manually or via separate process)
-    await GraphImportJob.findByIdAndUpdate(job._id, {
-      status: "completed",
-      completedAt: new Date(),
-    });
-
-    // Clear regional caches so next request picks up new graph
-    clearCache();
-
-    return res.status(201).json({
+    return res.status(202).json({
       success: true,
-      message: `Graph ${operation} job completed for region '${cleanCode}'.`,
+      message: `Graph ${operation} for region '${cleanCode}' is pending. ` +
+        "Run the import via CLI: " +
+        `node server/data/ingest/downloadRegion.js ${cleanCode} && ` +
+        `node server/data/ingest/importRegion.js ${cleanCode} <osmFile>`,
       job: {
         id: job._id,
         regionCode: cleanCode,
         operation,
-        status: "completed",
+        status: "pending",
         startedAt: job.startedAt,
-        completedAt: new Date(),
       },
     });
   } catch (error) {
     console.error("Graph import error:", error.message);
 
-    // Update job status to failed if it was created
+    // Record failed job if possible
     try {
       if (error.code !== 11000) {
         await GraphImportJob.create({
@@ -160,10 +180,10 @@ async function listGraphs(req, res) {
  */
 async function clearCacheHandler(req, res) {
   try {
-    clearCache();
+    clearAllCaches();
     return res.json({
       success: true,
-      message: "All graph caches cleared.",
+      message: "All graph caches cleared (route, walking route, walking coordinate).",
     });
   } catch (error) {
     console.error("Clear cache error:", error.message);

@@ -29,7 +29,7 @@ const REGIONS = {
   "madhya-pradesh": "madhya-pradesh-latest.osm.pbf",
   "delhi": "delhi-latest.osm.pbf",
   "haryana": "haryana-latest.osm.pbf",
-  "uttarakhand": "uttarakhand-latest.osm.pdf",
+  "uttarakhand": "uttarakhand-latest.osm.pbf",
   "himachal-pradesh": "himachal-pradesh-latest.osm.pbf",
   "punjab": "punjab-latest.osm.pbf",
 };

@@ -42,15 +42,31 @@ function isWalkable(way) {
 
 function getOneWay(way) {
   const tags = getTags(way);
+  const highway = tags.highway;
   const oneway = tags.oneway;
+  const footOneway = tags["foot:oneway"];
 
-  if (!oneway) return null;
+  // Pedestrian-specific ways: respect the OSM oneway tag directly.
+  // On footway/pedestrian/path, oneway=yes/restricts pedestrians to one direction.
+  if (["footway", "pedestrian", "path"].includes(highway)) {
+    if (!oneway) return null;
+    const v = oneway.toLowerCase();
+    if (v === "yes" || v === "true") return "yes";
+    if (v === "-1" || v === "reverse") return "reverse";
+    if (v === "no" || v === "false" || v === "reversible") return null;
+    return null;
+  }
 
-  const v = oneway.toLowerCase();
-  if (v === "yes") return "yes";
-  if (v === "yes" || v === "true") return "yes";
-  if (v === "-1" || v === "reverse") return "reverse";
-  if (v === "no" || v === "false" || v === "reversible") return null;
+  // For all other highway types (residential, secondary, etc.):
+  // pedestrians use sidewalks/footpaths on both sides unless foot:oneway
+  // is explicitly set. Vehicle oneway restrictions do not apply to walking.
+  if (footOneway) {
+    const v = footOneway.toLowerCase();
+    if (v === "yes" || v === "true") return "yes";
+    if (v === "-1" || v === "reverse") return "reverse";
+    if (v === "no" || v === "false" || v === "reversible") return null;
+  }
+
   return null;
 }
 
