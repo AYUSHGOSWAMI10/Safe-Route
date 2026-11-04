@@ -409,3 +409,90 @@ test("invalid routing mode throws in findRouteAStar", () => {
     findRouteAStar(adjacency, coords, "A", "B", "invalid_mode");
   });
 });
+
+test("getOneWay returns null for missing oneway tag", () => {
+  const { getOneWay } = require("../data/ingest/walkingRules");
+  assert.equal(getOneWay({ tag: [] }), null);
+  assert.equal(getOneWay({ tag: [{ k: "highway", v: "residential" }] }), null);
+});
+
+test("getOneWay returns 'yes' for oneway=yes", () => {
+  const { getOneWay } = require("../data/ingest/walkingRules");
+  assert.equal(getOneWay({ tag: [{ k: "oneway", v: "yes" }] }), "yes");
+  assert.equal(getOneWay({ tag: [{ k: "oneway", v: "true" }] }), "yes");
+});
+
+test("getOneWay returns 'reverse' for oneway=-1 or reverse", () => {
+  const { getOneWay } = require("../data/ingest/walkingRules");
+  assert.equal(getOneWay({ tag: [{ k: "oneway", v: "-1" }] }), "reverse");
+  assert.equal(getOneWay({ tag: [{ k: "oneway", v: "reverse" }] }), "reverse");
+});
+
+test("buildAdjacency respects oneway=yes (forward only)", () => {
+  const { buildAdjacency } = require("../data/ingest/routingEngine");
+  const graph = {
+    nodes: { A: { lat: 0, lng: 0 }, B: { lat: 0, lng: 0.001 } },
+    edges: [
+      { from: "A", to: "B", oneway: "yes", edge: null, lengthM: 100 },
+    ],
+  };
+  // Fix edge self-reference
+  graph.edges[0].edge = graph.edges[0];
+
+  const adj = buildAdjacency(graph);
+  // A -> B exists
+  assert.ok(adj.get("A").some(c => c.to === "B"));
+  // B -> A does NOT exist (one-way)
+  assert.ok(!adj.get("B").some(c => c.to === "A"));
+});
+
+test("buildAdjacency respects oneway=reverse (reverse only)", () => {
+  const { buildAdjacency } = require("../data/ingest/routingEngine");
+  // graphBuilder swaps from/to for oneway=reverse, so edge is B->A
+  const graph = {
+    nodes: { A: { lat: 0, lng: 0 }, B: { lat: 0, lng: 0.001 } },
+    edges: [
+      { from: "B", to: "A", oneway: "reverse", edge: null, lengthM: 100 },
+    ],
+  };
+  graph.edges[0].edge = graph.edges[0];
+
+  const adj = buildAdjacency(graph);
+  // B -> A exists (forward direction of the reversed edge)
+  assert.ok(adj.get("B").some(c => c.to === "A"));
+  // A -> B does NOT exist (reverse not added for one-way)
+  assert.ok(!adj.get("A").some(c => c.to === "B"));
+});
+
+test("buildAdjacency adds both directions for non-one-way edges", () => {
+  const { buildAdjacency } = require("../data/ingest/routingEngine");
+  const graph = {
+    nodes: { A: { lat: 0, lng: 0 }, B: { lat: 0, lng: 0.001 } },
+    edges: [
+      { from: "A", to: "B", oneway: null, edge: null, lengthM: 100 },
+    ],
+  };
+  graph.edges[0].edge = graph.edges[0];
+
+  const adj = buildAdjacency(graph);
+  assert.ok(adj.get("A").some(c => c.to === "B"));
+  assert.ok(adj.get("B").some(c => c.to === "A"));
+});
+
+test("findRoute cannot traverse one-way edge in wrong direction", () => {
+  const { buildAdjacency, findRoute } = require("../data/ingest/routingEngine");
+  const graph = {
+    nodes: { A: { lat: 0, lng: 0 }, B: { lat: 0, lng: 0.001 } },
+    edges: [
+      { from: "A", to: "B", oneway: "yes", edge: null, lengthM: 100 },
+    ],
+  };
+  graph.edges[0].edge = graph.edges[0];
+
+  const adj = buildAdjacency(graph);
+
+  // A -> B should work
+  assert.ok(findRoute(adj, "A", "B", "faster"));
+  // B -> A should fail (one-way)
+  assert.equal(findRoute(adj, "B", "A", "faster"), null);
+});

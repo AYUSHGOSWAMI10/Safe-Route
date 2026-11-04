@@ -84,15 +84,19 @@ function buildAdjacency(graph) {
   }
 
   for (const edge of graph.edges) {
+    // Always add the forward direction (from -> to)
     adjacency.get(edge.from).push({
       to: edge.to,
       edge
     });
 
-    adjacency.get(edge.to).push({
-      to: edge.from,
-      edge
-    });
+    // Only add the reverse direction if the edge is not one-way
+    if (!edge.oneway) {
+      adjacency.get(edge.to).push({
+        to: edge.from,
+        edge
+      });
+    }
   }
 
   return adjacency;

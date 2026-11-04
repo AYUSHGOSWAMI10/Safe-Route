@@ -40,7 +40,22 @@ function isWalkable(way) {
   return true;
 }
 
+function getOneWay(way) {
+  const tags = getTags(way);
+  const oneway = tags.oneway;
+
+  if (!oneway) return null;
+
+  const v = oneway.toLowerCase();
+  if (v === "yes") return "yes";
+  if (v === "yes" || v === "true") return "yes";
+  if (v === "-1" || v === "reverse") return "reverse";
+  if (v === "no" || v === "false" || v === "reversible") return null;
+  return null;
+}
+
 module.exports = {
   getTags,
   isWalkable,
+  getOneWay,
 };

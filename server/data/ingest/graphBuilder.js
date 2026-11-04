@@ -1,4 +1,4 @@
-const { getTags } = require("./walkingRules");
+const { getTags, getOneWay } = require("./walkingRules");
 
 function haversine(lat1, lng1, lat2, lng2) {
   const R = 6371000;
@@ -34,6 +34,7 @@ function buildGraph(nodes, walkingWays) {
 
   for (const way of walkingWays) {
     const tags = getTags(way);
+    const oneway = getOneWay(way);
 
     const refs = (Array.isArray(way.nd) ? way.nd : [way.nd])
       .filter(Boolean)
@@ -44,8 +45,13 @@ function buildGraph(nodes, walkingWays) {
     }
 
     for (let i = 0; i < refs.length - 1; i++) {
-      const from = refs[i];
-      const to = refs[i + 1];
+      let from = refs[i];
+      let to = refs[i + 1];
+
+      // For one-way=reverse, traverse in opposite direction
+      if (oneway === "reverse") {
+        [from, to] = [to, from];
+      }
 
       const a = nodeMap.get(from);
       const b = nodeMap.get(to);
@@ -65,6 +71,7 @@ function buildGraph(nodes, walkingWays) {
         from,
         to,
         wayId: String(way.id),
+        oneway,
         geometry: [
             [a.lng, a.lat],
             [b.lng, b.lat]
