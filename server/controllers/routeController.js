@@ -162,7 +162,7 @@ async function getLocations(req, res) {
 }
 
 async function findRoutes(req, res) {
-  const { source, destination, preference = "balanced" } = req.body || {};
+  const { source, destination, preference = "balanced", slider } = req.body || {};
 
   const src =
     typeof source === "number"
@@ -188,6 +188,18 @@ async function findRoutes(req, res) {
   const mode = typeof preference === "string" ? preference.trim().toLowerCase() : "";
   if (!validModes.has(mode)) {
     return res.status(400).json({ error: "Choose Faster, Balanced, or Safer." });
+  }
+
+  // Parse optional custom slider value if provided
+  let customSlider = null;
+  if (slider !== undefined && slider !== null && slider !== "") {
+    const s = Number(slider);
+    if (!Number.isFinite(s) || s < 0 || s > 1) {
+      return res.status(400).json({ error: "Slider value must be a number between 0 and 1." });
+    }
+    if (s !== 0 && s !== 0.5 && s !== 1) {
+      customSlider = s;
+    }
   }
 
   let adjacency;
@@ -223,7 +235,8 @@ async function findRoutes(req, res) {
     return res.status(404).json({ error: "One or both locations are outside the walking graph." });
   }
 
-  const selectedResult = findRoute(adjacency, src, dst, mode);
+  const queryForMode = mode === "custom" && customSlider !== null ? { slider: customSlider } : mode;
+  const selectedResult = findRoute(adjacency, src, dst, queryForMode);
   if (!isRouteFound(selectedResult)) {
     return res.status(404).json({
       error: "No connected walking route found.",
@@ -231,34 +244,65 @@ async function findRoutes(req, res) {
     });
   }
 
-  const modes = [
-    { mode: "faster", label: "Route A (Faster)" },
-    { mode: "balanced", label: "Route B (Balanced)" },
-    { mode: "safer", label: "Route C (Safer)" },
+  const candidateProfiles = [
+    { mode: "faster", label: "Route A (Faster)", slider: 0 },
+    { mode: "balanced", label: "Route B (Balanced)", slider: 0.5 },
+    { mode: "safer", label: "Route C (Safer)", slider: 1.0 },
   ];
 
-  const routes = [];
-  let recommendedName = null;
+  if (customSlider !== null) {
+    candidateProfiles.push({
+      mode: "custom",
+      queryMode: { slider: customSlider },
+      label: `Route Custom (${customSlider})`,
+      slider: customSlider,
+    });
+  }
 
-  for (const { mode: m, label } of modes) {
-    const result = m === mode ? selectedResult : findRoute(adjacency, src, dst, m);
+  const routesByPath = new Map();
+
+  for (const prof of candidateProfiles) {
+    const qMode = prof.queryMode || prof.mode;
+    const result = prof.mode === mode ? selectedResult : findRoute(adjacency, src, dst, qMode);
     if (!isRouteFound(result)) continue;
 
+    const pathKey = result.nodes.join("->");
     const stats = calculateRouteStats(result.nodes, adjacency, isPlaceGraph);
-    const routeObj = {
-      name: label,
-      path: result.nodes,
-      distance: stats.distanceKm,
-      estimatedTime: stats.estimatedTimeMin,
-      safetyScore: stats.safetyScore,
-      riskBand: stats.riskBand,
-      cost: Number(result.weightedCost.toFixed(2)),
-      preference: m,
-    };
 
-    routes.push(routeObj);
-    if (m === mode) {
-      recommendedName = label;
+    if (routesByPath.has(pathKey)) {
+      const existing = routesByPath.get(pathKey);
+      existing.profiles.push(prof.mode);
+      existing.mergedProfiles.push(prof.mode);
+      existing.merged = true;
+      if (prof.mode === mode) {
+        existing.name = prof.label;
+        existing.preference = prof.mode;
+      }
+    } else {
+      routesByPath.set(pathKey, {
+        name: prof.label,
+        path: result.nodes,
+        distance: stats.distanceKm,
+        estimatedTime: stats.estimatedTimeMin,
+        safetyScore: stats.safetyScore,
+        riskBand: stats.riskBand,
+        cost: Number(result.weightedCost.toFixed(2)),
+        preference: prof.mode,
+        slider: prof.slider,
+        profiles: [prof.mode],
+        mergedProfiles: [prof.mode],
+        merged: false,
+      });
+    }
+  }
+
+  const routes = Array.from(routesByPath.values());
+  let recommendedName = null;
+
+  for (const r of routes) {
+    if (r.profiles.includes(mode)) {
+      recommendedName = r.name;
+      break;
     }
   }
 
