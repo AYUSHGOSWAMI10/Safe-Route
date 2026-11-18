@@ -367,3 +367,61 @@ test("disconnected nodes return a typed NoRouteResult with NO_ROUTE status in fi
   assert.deepEqual(successResult.nodes, ["A", "B"]);
   assert.equal(isRouteFound(successResult), true);
 });
+
+test("POST /api/routes/find merges identical routes and records merged profiles", async () => {
+  const res = await invokeHandler(findRoutes, {
+    body: {
+      source: "Central Park",
+      destination: "University",
+      preference: "balanced",
+    },
+  });
+
+  assert.equal(res.status, 200);
+  const body = res.body;
+
+  // Faster and Balanced share the same shortest path on sampleRoads
+  // Verify they were merged into a single entry
+  const mergedRoute = body.routes.find((r) => r.merged === true);
+  assert.ok(mergedRoute, "Should have a merged route");
+  assert.ok(Array.isArray(mergedRoute.mergedProfiles), "mergedProfiles should be an array");
+  assert.ok(mergedRoute.mergedProfiles.includes("faster"), "Should include faster in merged profiles");
+  assert.ok(mergedRoute.mergedProfiles.includes("balanced"), "Should include balanced in merged profiles");
+
+  // Unique paths should not have identical entries
+  const paths = body.routes.map((r) => r.path.join("->"));
+  const uniquePaths = new Set(paths);
+  assert.equal(paths.length, uniquePaths.size, "All returned routes must have unique paths (no duplicates)");
+});
+
+test("POST /api/routes/find includes custom slider route when slider is provided", async () => {
+  const res = await invokeHandler(findRoutes, {
+    body: {
+      source: "Central Park",
+      destination: "University",
+      preference: "balanced",
+      slider: 0.75,
+    },
+  });
+
+  assert.equal(res.status, 200);
+  const body = res.body;
+
+  // Verify custom profile is recorded either as a distinct route or merged
+  const allProfiles = body.routes.flatMap((r) => r.profiles || []);
+  assert.ok(allProfiles.includes("custom"), "custom profile should be included in generated routes");
+});
+
+test("POST /api/routes/find rejects invalid slider value with HTTP 400", async () => {
+  const res = await invokeHandler(findRoutes, {
+    body: {
+      source: "Central Park",
+      destination: "University",
+      preference: "balanced",
+      slider: 2.5, // outside [0, 1]
+    },
+  });
+
+  assert.equal(res.status, 400);
+  assert.match(res.body.error, /Slider value must be a number between 0 and 1/);
+});

@@ -1,6 +1,19 @@
 const { getEdgeCost, haversineM } = require("./routeWeights");
 
-const validModes = new Set(["faster", "balanced", "safer"]);
+const validModes = new Set(["faster", "balanced", "safer", "custom"]);
+
+function isValidMode(mode) {
+  if (typeof mode === "string") {
+    return validModes.has(mode);
+  }
+  if (mode && typeof mode === "object") {
+    return Number.isFinite(mode.slider) && mode.slider >= 0 && mode.slider <= 1;
+  }
+  if (typeof mode === "number") {
+    return Number.isFinite(mode) && mode >= 0 && mode <= 1;
+  }
+  return false;
+}
 
 /**
  * Min-heap priority queue for efficient node extraction in shortest-path algorithms.
@@ -168,8 +181,8 @@ function buildAdjacency(graph) {
 }
 
 function findRoute(adjacency, source, destination, mode = "faster") {
-  if (!validModes.has(mode)) {
-    throw new Error(`Invalid routing mode: ${mode}`);
+  if (!isValidMode(mode)) {
+    throw new Error(`Invalid routing mode: ${typeof mode === "object" ? JSON.stringify(mode) : mode}`);
   }
 
   if (!adjacency.has(source) || !adjacency.has(destination)) {
@@ -231,8 +244,8 @@ function findRoute(adjacency, source, destination, mode = "faster") {
  * @returns {RouteResult|null} RouteResult instance or null if outside graph
  */
 function findRouteAStar(adjacency, coords, source, destination, mode = "faster") {
-  if (!validModes.has(mode)) {
-    throw new Error(`Invalid routing mode: ${mode}`);
+  if (!isValidMode(mode)) {
+    throw new Error(`Invalid routing mode: ${typeof mode === "object" ? JSON.stringify(mode) : mode}`);
   }
 
   if (!adjacency.has(source) || !adjacency.has(destination)) {
@@ -307,6 +320,7 @@ module.exports = {
   findRouteAStar,
   getEdgeCost,
   validModes,
+  isValidMode,
   MinHeap,
   RouteResult,
   NoRouteResult,
