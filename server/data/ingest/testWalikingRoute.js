@@ -34,7 +34,7 @@ console.log("Graph edges:", graph.edges.length);
 console.log("Routing mode:", mode);
 console.log("Algorithm:", useAStar ? "A*" : "Dijkstra (priority queue)");
 
-if (!result) {
+if (!result || !result.found || result.status === "NO_ROUTE") {
   console.log("Route found:", false);
   process.exit(0);
 }

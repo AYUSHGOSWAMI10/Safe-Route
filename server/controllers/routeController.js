@@ -2,8 +2,15 @@ const fs = require("fs");
 const path = require("path");
 const Road = require("../models/Road");
 const sampleRoads = require("../data/sampleRoads");
-const { buildAdjacency, findRoute, validModes } = require("../data/ingest/routingEngine");
-const { regionRegistry } = require("../data/ingest/regionRegistry");
+const {
+  buildAdjacency,
+  findRoute,
+  validModes,
+  isRouteFound,
+  RouteResult,
+  NoRouteResult,
+} = require("../data/ingest/routingEngine");
+const { getRiskBand } = require("../data/ingest/riskConfig");
 
 let cachedWalkingGraph = null;
 let cachedWalkingAdjacency = null;
@@ -47,20 +54,7 @@ function buildPlaceGraph(roads) {
   return { nodes, edges };
 }
 
-/**
- * Load walking graph for an optional region.
- * When regionCode is provided, uses the region registry.
- * Falls back to the default walkingGraph.json file.
- */
-function loadWalkingGraph(customPath, regionCode) {
-  if (regionCode) {
-    const regionData = regionRegistry.get(regionCode);
-    if (regionData) {
-      return { graph: regionData.graph, adjacency: regionData.adjacency };
-    }
-    throw new Error(`Region not found: ${regionCode}`);
-  }
-
+function loadWalkingGraph(customPath) {
   if (cachedWalkingGraph && cachedWalkingAdjacency && !customPath) {
     return { graph: cachedWalkingGraph, adjacency: cachedWalkingAdjacency };
   }
@@ -134,6 +128,7 @@ function calculateRouteStats(nodeIds, adjacency, isPlaceGraph = true) {
       distanceKm,
       estimatedTimeMin,
       safetyScore,
+      riskBand: getRiskBand(1 - safetyScore / 100),
     };
   }
 
@@ -149,6 +144,7 @@ function calculateRouteStats(nodeIds, adjacency, isPlaceGraph = true) {
     distanceKm,
     estimatedTimeMin,
     safetyScore,
+    riskBand: getRiskBand(1 - safetyScore / 100),
   };
 }
 
@@ -166,7 +162,7 @@ async function getLocations(req, res) {
 }
 
 async function findRoutes(req, res) {
-  const { source, destination, preference = "balanced", regionCode } = req.body || {};
+  const { source, destination, preference = "balanced" } = req.body || {};
 
   const src =
     typeof source === "number"
@@ -208,7 +204,7 @@ async function findRoutes(req, res) {
     } else {
       // Fallback check against OSM walking graph if node IDs were passed
       try {
-        const walkingData = loadWalkingGraph(undefined, regionCode);
+        const walkingData = loadWalkingGraph();
         if (walkingData.adjacency.has(src) && walkingData.adjacency.has(dst)) {
           adjacency = walkingData.adjacency;
           isPlaceGraph = false;
@@ -228,8 +224,11 @@ async function findRoutes(req, res) {
   }
 
   const selectedResult = findRoute(adjacency, src, dst, mode);
-  if (!selectedResult) {
-    return res.status(404).json({ error: "No connected walking route found." });
+  if (!isRouteFound(selectedResult)) {
+    return res.status(404).json({
+      error: "No connected walking route found.",
+      code: "NO_ROUTE",
+    });
   }
 
   const modes = [
@@ -243,7 +242,7 @@ async function findRoutes(req, res) {
 
   for (const { mode: m, label } of modes) {
     const result = m === mode ? selectedResult : findRoute(adjacency, src, dst, m);
-    if (!result) continue;
+    if (!isRouteFound(result)) continue;
 
     const stats = calculateRouteStats(result.nodes, adjacency, isPlaceGraph);
     const routeObj = {
@@ -252,6 +251,7 @@ async function findRoutes(req, res) {
       distance: stats.distanceKm,
       estimatedTime: stats.estimatedTimeMin,
       safetyScore: stats.safetyScore,
+      riskBand: stats.riskBand,
       cost: Number(result.weightedCost.toFixed(2)),
       preference: m,
     };

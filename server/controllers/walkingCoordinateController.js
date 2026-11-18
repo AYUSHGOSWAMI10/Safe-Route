@@ -162,7 +162,9 @@ function findWalkingRouteByCoordinates(req, res) {
     }
     const { start, end } = pair;
     const result = findRoute(adjacency, start.id, end.id, preference);
-    if (!result) return res.status(404).json({ error: "No connected walking route found between the snapped nodes." });
+    if (!result || !result.found || result.status === "NO_ROUTE") {
+      return res.status(404).json({ error: "No connected walking route found between the snapped nodes.", code: "NO_ROUTE" });
+    }
 
     let distanceM = 0;
     const trafficExposureDistanceM = {};
