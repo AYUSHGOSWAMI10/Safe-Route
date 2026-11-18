@@ -76,6 +76,71 @@ class MinHeap {
   }
 }
 
+/**
+ * Typed route search result.
+ */
+class RouteResult {
+  constructor({
+    status = "FOUND",
+    found = true,
+    nodes = [],
+    weightedCost = 0,
+    error = null,
+    message = null,
+    source = null,
+    destination = null,
+  } = {}) {
+    this.status = status;
+    this.found = found;
+    this.nodes = nodes;
+    this.weightedCost = weightedCost;
+    if (error) this.error = error;
+    if (message) this.message = message;
+    if (source) this.source = source;
+    if (destination) this.destination = destination;
+  }
+
+  static found(nodes, weightedCost) {
+    return new RouteResult({
+      status: "FOUND",
+      found: true,
+      nodes,
+      weightedCost,
+    });
+  }
+
+  static noRoute(source, destination, reason = "No path between disconnected nodes") {
+    return new NoRouteResult(source, destination, reason);
+  }
+}
+
+/**
+ * Dedicated typed class representing a no-route / disconnected nodes result.
+ */
+class NoRouteResult extends RouteResult {
+  constructor(source = null, destination = null, reason = "No path between disconnected nodes") {
+    super({
+      status: "NO_ROUTE",
+      found: false,
+      nodes: null,
+      weightedCost: Infinity,
+      error: "NO_ROUTE",
+      message: reason,
+      source,
+      destination,
+    });
+  }
+}
+
+function isRouteFound(result) {
+  return Boolean(
+    result &&
+    result.found !== false &&
+    result.status !== "NO_ROUTE" &&
+    Array.isArray(result.nodes)
+  );
+}
+
 function buildAdjacency(graph) {
   const adjacency = new Map();
 
@@ -140,7 +205,9 @@ function findRoute(adjacency, source, destination, mode = "faster") {
     }
   }
 
-  if (!dist.has(destination)) return null;
+  if (!dist.has(destination)) {
+    return RouteResult.noRoute(source, destination, "No connected walking route found between nodes.");
+  }
 
   const route = [];
 
@@ -150,10 +217,7 @@ function findRoute(adjacency, source, destination, mode = "faster") {
 
   route.reverse();
 
-  return {
-    nodes: route,
-    weightedCost: dist.get(destination)
-  };
+  return RouteResult.found(route, dist.get(destination));
 }
 
 /**
@@ -164,7 +228,7 @@ function findRoute(adjacency, source, destination, mode = "faster") {
  * @param {string} source - source node id
  * @param {string} destination - destination node id
  * @param {string} mode - "faster" | "balanced" | "safer"
- * @returns {object|null} { nodes, weightedCost } or null if no route
+ * @returns {RouteResult|null} RouteResult instance or null if outside graph
  */
 function findRouteAStar(adjacency, coords, source, destination, mode = "faster") {
   if (!validModes.has(mode)) {
@@ -222,7 +286,9 @@ function findRouteAStar(adjacency, coords, source, destination, mode = "faster")
     }
   }
 
-  if (!dist.has(destination)) return null;
+  if (!dist.has(destination)) {
+    return RouteResult.noRoute(source, destination, "No connected walking route found between nodes.");
+  }
 
   const route = [];
 
@@ -232,10 +298,7 @@ function findRouteAStar(adjacency, coords, source, destination, mode = "faster")
 
   route.reverse();
 
-  return {
-    nodes: route,
-    weightedCost: dist.get(destination)
-  };
+  return RouteResult.found(route, dist.get(destination));
 }
 
 module.exports = {
@@ -244,5 +307,8 @@ module.exports = {
   findRouteAStar,
   getEdgeCost,
   validModes,
-  MinHeap
+  MinHeap,
+  RouteResult,
+  NoRouteResult,
+  isRouteFound,
 };

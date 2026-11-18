@@ -47,7 +47,9 @@ function findWalkingRoute(req, res) {
     }
 
     const result = findRoute(adjacency, source, destination, preference);
-    if (!result) return res.status(404).json({ error: "No connected walking route found." });
+    if (!result || !result.found || result.status === "NO_ROUTE") {
+      return res.status(404).json({ error: "No connected walking route found.", code: "NO_ROUTE" });
+    }
 
     let distanceM = 0;
     const trafficExposureDistanceM = {};

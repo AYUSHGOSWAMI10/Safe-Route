@@ -11,7 +11,10 @@ const {
 const {
   buildAdjacency,
   findRoute,
-  findRouteAStar
+  findRouteAStar,
+  RouteResult,
+  NoRouteResult,
+  isRouteFound,
 } = require("../data/ingest/routingEngine");
 
 function invokeHandler(handler, { body = {}, query = {}, params = {} } = {}) {
@@ -315,4 +318,52 @@ test("invalid routing mode throws in findRouteAStar", () => {
     () => findRouteAStar(adjacency, {}, "A", "B", "invalid_mode"),
     { message: /Invalid routing mode/ }
   );
+});
+
+test("disconnected nodes return a typed NoRouteResult with NO_ROUTE status in findRoute and findRouteAStar", () => {
+  const adjacency = new Map();
+  // Component 1: A <-> B
+  adjacency.set("A", [{ to: "B", edge: { lengthM: 500 } }]);
+  adjacency.set("B", [{ to: "A", edge: { lengthM: 500 } }]);
+  // Component 2: C <-> D (disconnected from A and B)
+  adjacency.set("C", [{ to: "D", edge: { lengthM: 300 } }]);
+  adjacency.set("D", [{ to: "C", edge: { lengthM: 300 } }]);
+
+  // Dijkstra on disconnected nodes
+  const dijkstraResult = findRoute(adjacency, "A", "D", "faster");
+  assert.ok(dijkstraResult);
+  assert.ok(dijkstraResult instanceof RouteResult);
+  assert.ok(dijkstraResult instanceof NoRouteResult);
+  assert.equal(dijkstraResult.status, "NO_ROUTE");
+  assert.equal(dijkstraResult.found, false);
+  assert.equal(dijkstraResult.error, "NO_ROUTE");
+  assert.equal(dijkstraResult.nodes, null);
+  assert.equal(dijkstraResult.weightedCost, Infinity);
+  assert.equal(isRouteFound(dijkstraResult), false);
+
+  // A* on disconnected nodes
+  const coords = {
+    A: { lat: 27.57, lng: 77.67 },
+    B: { lat: 27.571, lng: 77.671 },
+    C: { lat: 28.57, lng: 78.67 },
+    D: { lat: 28.571, lng: 78.671 },
+  };
+  const astarResult = findRouteAStar(adjacency, coords, "A", "D", "faster");
+  assert.ok(astarResult);
+  assert.ok(astarResult instanceof RouteResult);
+  assert.ok(astarResult instanceof NoRouteResult);
+  assert.equal(astarResult.status, "NO_ROUTE");
+  assert.equal(astarResult.found, false);
+  assert.equal(astarResult.error, "NO_ROUTE");
+  assert.equal(astarResult.nodes, null);
+  assert.equal(astarResult.weightedCost, Infinity);
+  assert.equal(isRouteFound(astarResult), false);
+
+  // Successful route returns RouteResult with found=true
+  const successResult = findRoute(adjacency, "A", "B", "faster");
+  assert.ok(successResult);
+  assert.equal(successResult.status, "FOUND");
+  assert.equal(successResult.found, true);
+  assert.deepEqual(successResult.nodes, ["A", "B"]);
+  assert.equal(isRouteFound(successResult), true);
 });
