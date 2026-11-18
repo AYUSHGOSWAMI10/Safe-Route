@@ -36,6 +36,14 @@ async function requireAuth(req, res, next) {
     });
   }
 
+  // Demo user bypass - no MongoDB lookup needed
+  if (payload.sub === "demo-user") {
+    req.userId = "demo-user";
+    req.userRole = "user";
+    req.isDemo = true;
+    return next();
+  }
+
   try {
     const user = await User.findById(payload.sub).select("_id role");
 

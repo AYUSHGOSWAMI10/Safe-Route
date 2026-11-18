@@ -24,6 +24,10 @@ export function login({ email, password }) {
   return authRequest("login", { email, password });
 }
 
+export async function loginAsDemo() {
+  return authRequest("demo-login", { email: "demo@saferoute.local", password: "SafeRouteDemo123" });
+}
+
 export async function getMe(token) {
   const response = await fetch(`${API_URL}/me`, {
     headers: {

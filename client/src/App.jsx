@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import RouteCard from "./components/RouteCard.jsx";
 import { findRoutes, getLocations } from "./services/routes.js";
-import { signup, login, getMe } from "./services/auth.js";
+import { signup, login, loginAsDemo, getMe } from "./services/auth.js";
 
 const preferences = ["Faster", "Balanced", "Safer"];
 const TOKEN_KEY = "saferoute_token";
@@ -82,6 +82,8 @@ export default function App() {
       if (authMode === "signup") {
         const name = form.get("name");
         data = await signup({ name, email, password });
+      } else if (authMode === "demo") {
+        data = await loginAsDemo();
       } else {
         data = await login({ email, password });
       }
@@ -239,22 +241,38 @@ export default function App() {
               </button>
             </form>
 
-            <p className="auth-switch">
-              {authMode === "login"
-                ? "New to SafeRoute?"
-                : "Already have an account?"}{" "}
-              <button
-                className="text-button"
-                type="button"
-                onClick={() => {
-                  setAuthMode(authMode === "login" ? "signup" : "login");
-                  setAuthError("");
-                  setAuthMessage("");
-                }}
-              >
-                {authMode === "login" ? "Sign up" : "Log in"}
-              </button>
-            </p>
+            
+<p className="auth-switch">
+  {authMode === "login"
+    ? "New to SafeRoute?"
+    : "Already have an account?"}{" "}
+  <button
+    className="text-button"
+    type="button"
+    onClick={() => {
+      setAuthMode(authMode === "login" ? "signup" : "login");
+      setAuthError("");
+      setAuthMessage("");
+    }}
+  >
+    {authMode === "login" ? "Sign up" : "Log in"}
+  </button>
+
+  {authMode === "login" && (
+    <button
+      className="text-button"
+      type="button"
+      onClick={() => {
+        setAuthMode("demo");
+        setAuthError("");
+        setAuthMessage("");
+      }}
+    >
+      Continue as Demo User
+    </button>
+  )}
+</p>
+
           </section>
         </>
       ) : (

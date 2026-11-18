@@ -423,17 +423,37 @@ function writeGraph(graph, outputDir, regionCode) {
   return finalPath;
 }
 
-async function registerRegionInMongo(regionCode, regionName, url, graphPath, regionData) {
+async function registerRegionInMongo(
+  regionCode,
+  regionName,
+  url,
+  graphPath,
+  regionData
+) {
+  if (!process.env.MONGODB_URI) {
+    console.log("MONGODB_URI not configured. Skipping database registration.");
+    return null;
+  }
+
   try {
     const mongoose = require("mongoose");
-    if (!process.env.MONGODB_URI) {
+    const Region = require("../models/Region");
 
-  const Region = require("../models/Region");
+    if (mongoose.connection.readyState === 0) {
+      await mongoose.connect(process.env.MONGODB_URI);
+    } else if (mongoose.connection.readyState !== 1) {
+      await mongoose.connection.asPromise();
+    }
+
     const existing = await Region.findOne({ regionCode }).lean();
+
     if (existing) {
-      console.log(`Region '${regionCode}' already exists in database. Skipping DB registration.`);
+      console.log(
+        `Region '${regionCode}' already exists in database. Skipping DB registration.`
+      );
       return existing;
     }
+
     const region = new Region({
       regionCode,
       name: regionName,
@@ -445,3 +465,16 @@ async function registerRegionInMongo(regionCode, regionName, url, graphPath, reg
       edgeCount: regionData.metadata.edgeCount,
       filePath: graphPath,
       isActive: true,
+    });
+
+    await region.save();
+    return region;
+  } catch (error) {
+    if (error.code === 11000) {
+      throw new Error(`Region ${regionCode} is already registered`);
+    }
+
+    throw error;
+  }
+}
+}
