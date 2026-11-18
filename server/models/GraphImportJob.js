@@ -28,8 +28,14 @@ const graphImportJobSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
-    nodeCount: { type: Number, min: 0 },
-    edgeCount: { type: Number, min: 0 },
+    nodeCount: {
+      type: Number,
+      min: 0,
+    },
+    edgeCount: {
+      type: Number,
+      min: 0,
+    },
     error: {
       type: String,
       trim: true,
@@ -40,12 +46,20 @@ const graphImportJobSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
-    startedAt: { type: Date, default: Date.now },
-    completedAt: { type: Date },
+    startedAt: {
+      type: Date,
+      default: Date.now,
+    },
+    completedAt: {
+      type: Date,
+    },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+  }
 );
 
+// Indexes
 graphImportJobSchema.index({ regionCode: 1, createdAt: -1 });
 graphImportJobSchema.index({ status: 1 });
 graphImportJobSchema.index({ startedBy: 1 });
