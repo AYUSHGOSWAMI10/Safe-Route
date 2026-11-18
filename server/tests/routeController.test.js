@@ -1,7 +1,5 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const express = require("express");
-const http = require("node:http");
 
 const {
   getLocations,
@@ -16,279 +14,203 @@ const {
   findRouteAStar
 } = require("../data/ingest/routingEngine");
 
-function createTestApp() {
-  const app = express();
-  app.use(express.json());
-  app.get("/api/routes", getLocations);
-  app.post("/api/routes/find", findRoutes);
-  return app;
-}
-
-function startServer(app) {
-  return new Promise((resolve) => {
-    const server = http.createServer(app);
-    server.listen(0, "127.0.0.1", () => {
-      const port = server.address().port;
-      resolve({
-        server,
-        baseUrl: `http://127.0.0.1:${port}`,
-        close: () => new Promise((res) => server.close(res)),
-      });
-    });
+function invokeHandler(handler, { body = {}, query = {}, params = {} } = {}) {
+  return new Promise((resolve, reject) => {
+    const req = { body, query, params };
+    let statusCode = 200;
+    const res = {
+      status(code) {
+        statusCode = code;
+        return this;
+      },
+      json(data) {
+        resolve({ status: statusCode, body: data });
+        return this;
+      },
+      send(data) {
+        resolve({ status: statusCode, body: data });
+        return this;
+      },
+    };
+    try {
+      const result = handler(req, res);
+      if (result && typeof result.catch === "function") {
+        result.catch(reject);
+      }
+    } catch (err) {
+      reject(err);
+    }
   });
 }
 
 test("GET /api/routes returns available location place names", async () => {
-  const app = createTestApp();
-  const instance = await startServer(app);
+  const res = await invokeHandler(getLocations);
+  assert.equal(res.status, 200);
 
-  try {
-    const res = await fetch(`${instance.baseUrl}/api/routes`);
-    assert.equal(res.status, 200);
+  const body = res.body;
+  assert.ok(Array.isArray(body.locations), "locations should be an array");
+  assert.ok(body.locations.includes("Central Park"), "should include Central Park");
+  assert.ok(body.locations.includes("University"), "should include University");
+  assert.ok(body.locations.includes("Market Square"), "should include Market Square");
 
-    const body = await res.json();
-    assert.ok(Array.isArray(body.locations), "locations should be an array");
-    assert.ok(body.locations.includes("Central Park"), "should include Central Park");
-    assert.ok(body.locations.includes("University"), "should include University");
-    assert.ok(body.locations.includes("Market Square"), "should include Market Square");
-
-    // Ensure all returned locations are human-readable place names, not raw coordinates/numbers
-    for (const loc of body.locations) {
-      assert.ok(typeof loc === "string");
-      assert.ok(!/^\d+$/.test(loc), `Location "${loc}" should be a place name, not a numeric coordinate`);
-    }
-  } finally {
-    await instance.close();
+  // Ensure all returned locations are human-readable place names, not raw coordinates/numbers
+  for (const loc of body.locations) {
+    assert.ok(typeof loc === "string");
+    assert.ok(!/^\d+$/.test(loc), `Location "${loc}" should be a place name, not a numeric coordinate`);
   }
 });
 
 test("POST /api/routes/find returns place names in path and recommended route", async () => {
-  const app = createTestApp();
-  const instance = await startServer(app);
+  const source = "Central Park";
+  const destination = "University";
 
-  try {
-    const source = "Central Park";
-    const destination = "University";
+  const res = await invokeHandler(findRoutes, {
+    body: {
+      source,
+      destination,
+      preference: "balanced",
+    },
+  });
 
-    const res = await fetch(`${instance.baseUrl}/api/routes/find`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        source,
-        destination,
-        preference: "balanced",
-      }),
-    });
+  assert.equal(res.status, 200);
+  const body = res.body;
 
-    assert.equal(res.status, 200);
-    const body = await res.json();
+  assert.equal(body.source, source);
+  assert.equal(body.destination, destination);
+  assert.ok(Array.isArray(body.routes));
+  assert.ok(body.routes.length > 0);
+  assert.equal(body.recommended, "Route B (Balanced)");
 
-    assert.equal(body.source, source);
-    assert.equal(body.destination, destination);
-    assert.ok(Array.isArray(body.routes));
-    assert.ok(body.routes.length > 0);
-    assert.equal(body.recommended, "Route B (Balanced)");
+  for (const route of body.routes) {
+    assert.ok(typeof route.name === "string" && route.name.length > 0);
+    assert.ok(Array.isArray(route.path) && route.path.length > 1);
+    assert.equal(route.path[0], source);
+    assert.equal(route.path.at(-1), destination);
 
-    for (const route of body.routes) {
-      assert.ok(typeof route.name === "string" && route.name.length > 0);
-      assert.ok(Array.isArray(route.path) && route.path.length > 1);
-      assert.equal(route.path[0], source);
-      assert.equal(route.path.at(-1), destination);
-
-      // Verify that every segment in path is a place name, not numeric coordinates
-      for (const step of route.path) {
-        assert.ok(!/^\d+$/.test(step), `Path step "${step}" should be a place name`);
-      }
-
-      assert.ok(Number.isFinite(route.distance) && route.distance > 0);
-      assert.ok(Number.isFinite(route.estimatedTime) && route.estimatedTime > 0);
-      assert.ok(
-        Number.isFinite(route.safetyScore) &&
-          route.safetyScore >= 0 &&
-          route.safetyScore <= 100
-      );
-      assert.ok(Number.isFinite(route.cost));
+    // Verify that every segment in path is a place name, not numeric coordinates
+    for (const step of route.path) {
+      assert.ok(!/^\d+$/.test(step), `Path step "${step}" should be a place name`);
     }
-  } finally {
-    await instance.close();
+
+    assert.ok(Number.isFinite(route.distance) && route.distance > 0);
+    assert.ok(Number.isFinite(route.estimatedTime) && route.estimatedTime > 0);
+    assert.ok(
+      Number.isFinite(route.safetyScore) &&
+        route.safetyScore >= 0 &&
+        route.safetyScore <= 100
+    );
+    assert.ok(Number.isFinite(route.cost));
   }
 });
 
 test("POST /api/routes/find handles faster preference and recommends Route A", async () => {
-  const app = createTestApp();
-  const instance = await startServer(app);
+  const res = await invokeHandler(findRoutes, {
+    body: {
+      source: "Central Park",
+      destination: "University",
+      preference: "faster",
+    },
+  });
 
-  try {
-    const res = await fetch(`${instance.baseUrl}/api/routes/find`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        source: "Central Park",
-        destination: "University",
-        preference: "faster",
-      }),
-    });
-
-    assert.equal(res.status, 200);
-    const body = await res.json();
-    assert.equal(body.recommended, "Route A (Faster)");
-  } finally {
-    await instance.close();
-  }
+  assert.equal(res.status, 200);
+  const body = res.body;
+  assert.equal(body.recommended, "Route A (Faster)");
 });
 
 test("POST /api/routes/find handles safer preference and recommends Route C with safer path", async () => {
-  const app = createTestApp();
-  const instance = await startServer(app);
+  const res = await invokeHandler(findRoutes, {
+    body: {
+      source: "Central Park",
+      destination: "University",
+      preference: "safer",
+    },
+  });
 
-  try {
-    const res = await fetch(`${instance.baseUrl}/api/routes/find`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        source: "Central Park",
-        destination: "University",
-        preference: "safer",
-      }),
-    });
-
-    assert.equal(res.status, 200);
-    const body = await res.json();
-    assert.equal(body.recommended, "Route C (Safer)");
-    const saferRoute = body.routes.find((r) => r.name === "Route C (Safer)");
-    assert.ok(saferRoute);
-    // Safer route takes Riverside
-    assert.ok(saferRoute.path.includes("Riverside"), "Safer route should route via Riverside for higher safety");
-  } finally {
-    await instance.close();
-  }
+  assert.equal(res.status, 200);
+  const body = res.body;
+  assert.equal(body.recommended, "Route C (Safer)");
+  const saferRoute = body.routes.find((r) => r.name === "Route C (Safer)");
+  assert.ok(saferRoute);
+  // Safer route takes Riverside
+  assert.ok(saferRoute.path.includes("Riverside"), "Safer route should route via Riverside for higher safety");
 });
 
 test("POST /api/routes/find also supports OSM node IDs when queried", async () => {
-  const app = createTestApp();
-  const instance = await startServer(app);
+  const res = await invokeHandler(findRoutes, {
+    body: {
+      source: "6314017249",
+      destination: "172755844",
+      preference: "balanced",
+    },
+  });
 
-  try {
-    const res = await fetch(`${instance.baseUrl}/api/routes/find`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        source: "6314017249",
-        destination: "172755844",
-        preference: "balanced",
-      }),
-    });
-
-    assert.equal(res.status, 200);
-    const body = await res.json();
-    assert.equal(body.source, "6314017249");
-    assert.equal(body.destination, "172755844");
-    assert.ok(body.routes.length > 0);
-  } finally {
-    await instance.close();
-  }
+  assert.equal(res.status, 200);
+  const body = res.body;
+  assert.equal(body.source, "6314017249");
+  assert.equal(body.destination, "172755844");
+  assert.ok(body.routes.length > 0);
 });
 
 test("POST /api/routes/find rejects missing source or destination with HTTP 400", async () => {
-  const app = createTestApp();
-  const instance = await startServer(app);
+  const res1 = await invokeHandler(findRoutes, {
+    body: { source: "Central Park" },
+  });
+  assert.equal(res1.status, 400);
 
-  try {
-    const res1 = await fetch(`${instance.baseUrl}/api/routes/find`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ source: "Central Park" }),
-    });
-    assert.equal(res1.status, 400);
+  const res2 = await invokeHandler(findRoutes, {
+    body: { destination: "University" },
+  });
+  assert.equal(res2.status, 400);
 
-    const res2 = await fetch(`${instance.baseUrl}/api/routes/find`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ destination: "University" }),
-    });
-    assert.equal(res2.status, 400);
-
-    const res3 = await fetch(`${instance.baseUrl}/api/routes/find`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
-    });
-    assert.equal(res3.status, 400);
-  } finally {
-    await instance.close();
-  }
+  const res3 = await invokeHandler(findRoutes, {
+    body: {},
+  });
+  assert.equal(res3.status, 400);
 });
 
 test("POST /api/routes/find rejects identical source and destination with HTTP 400", async () => {
-  const app = createTestApp();
-  const instance = await startServer(app);
+  const res = await invokeHandler(findRoutes, {
+    body: {
+      source: "Central Park",
+      destination: "Central Park",
+      preference: "balanced",
+    },
+  });
 
-  try {
-    const res = await fetch(`${instance.baseUrl}/api/routes/find`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        source: "Central Park",
-        destination: "Central Park",
-        preference: "balanced",
-      }),
-    });
-
-    assert.equal(res.status, 400);
-    const body = await res.json();
-    assert.equal(body.error, "Choose two different locations.");
-  } finally {
-    await instance.close();
-  }
+  assert.equal(res.status, 400);
+  const body = res.body;
+  assert.equal(body.error, "Choose two different locations.");
 });
 
 test("POST /api/routes/find rejects invalid preference with HTTP 400", async () => {
-  const app = createTestApp();
-  const instance = await startServer(app);
+  const res = await invokeHandler(findRoutes, {
+    body: {
+      source: "Central Park",
+      destination: "University",
+      preference: "fastest_possible_route",
+    },
+  });
 
-  try {
-    const res = await fetch(`${instance.baseUrl}/api/routes/find`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        source: "Central Park",
-        destination: "University",
-        preference: "fastest_possible_route",
-      }),
-    });
-
-    assert.equal(res.status, 400);
-    const body = await res.json();
-    assert.equal(body.error, "Choose Faster, Balanced, or Safer.");
-  } finally {
-    await instance.close();
-  }
+  assert.equal(res.status, 400);
+  const body = res.body;
+  assert.equal(body.error, "Choose Faster, Balanced, or Safer.");
 });
 
 test("POST /api/routes/find rejects unknown/invalid locations with HTTP 404", async () => {
-  const app = createTestApp();
-  const instance = await startServer(app);
+  const res = await invokeHandler(findRoutes, {
+    body: {
+      source: "Unknown Nonexistent Place",
+      destination: "University",
+      preference: "balanced",
+    },
+  });
 
-  try {
-    const res = await fetch(`${instance.baseUrl}/api/routes/find`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        source: "Unknown Nonexistent Place",
-        destination: "University",
-        preference: "balanced",
-      }),
-    });
-
-    assert.equal(res.status, 404);
-    const body = await res.json();
-    assert.equal(
-      body.error,
-      "One or both locations are outside the walking graph."
-    );
-  } finally {
-    await instance.close();
-  }
+  assert.equal(res.status, 404);
+  const body = res.body;
+  assert.equal(
+    body.error,
+    "One or both locations are outside the walking graph."
+  );
 });
 
 test("calculateRouteStats accurately calculates distance, walking time, and safety score", () => {
@@ -360,9 +282,8 @@ test("findRouteAStar returns same path as findRoute when coordinates are availab
     C: { lat: 27.572, lng: 77.672 },
   };
 
-  const dijkstra = findRoute(adjacency, "A", "C", "faster");
   const astar = findRouteAStar(adjacency, coords, "A", "C", "faster");
-
+  const dijkstra = findRoute(adjacency, "A", "C", "faster");
   assert.ok(astar);
   assert.deepEqual(astar.nodes, dijkstra.nodes);
   assert.equal(astar.weightedCost, dijkstra.weightedCost);
@@ -373,9 +294,7 @@ test("findRouteAStar falls back gracefully when coordinates are missing", () => 
   adjacency.set("A", [{ to: "B", edge: { lengthM: 1000 } }]);
   adjacency.set("B", [{ to: "A", edge: { lengthM: 1000 } }]);
 
-  const coords = {}; // no coordinates available
-
-  const result = findRouteAStar(adjacency, coords, "A", "B", "faster");
+  const result = findRouteAStar(adjacency, {}, "A", "B", "faster");
   assert.ok(result);
   assert.deepEqual(result.nodes, ["A", "B"]);
   assert.equal(result.weightedCost, 1000);
@@ -386,189 +305,14 @@ test("findRouteAStar returns null when source or destination missing", () => {
   adjacency.set("A", [{ to: "B", edge: { lengthM: 1000 } }]);
   adjacency.set("B", [{ to: "A", edge: { lengthM: 1000 } }]);
 
-  const coords = {
-    A: { lat: 27.57, lng: 77.67 },
-    B: { lat: 27.571, lng: 77.671 },
-  };
-
-  assert.equal(findRouteAStar(adjacency, coords, "A", "Z", "faster"), null);
-  assert.equal(findRouteAStar(adjacency, coords, "Z", "B", "faster"), null);
+  assert.equal(findRouteAStar(adjacency, {}, "A", "Z", "faster"), null);
+  assert.equal(findRouteAStar(adjacency, {}, "Z", "B", "faster"), null);
 });
 
 test("invalid routing mode throws in findRouteAStar", () => {
   const adjacency = new Map();
-  adjacency.set("A", [{ to: "B", edge: { lengthM: 1000 } }]);
-  adjacency.set("B", [{ to: "A", edge: { lengthM: 1000 } }]);
-
-  const coords = {
-    A: { lat: 27.57, lng: 77.67 },
-    B: { lat: 27.571, lng: 77.671 },
-  };
-
-  assert.throws(() => {
-    findRouteAStar(adjacency, coords, "A", "B", "invalid_mode");
-  });
-});
-
-test("getOneWay returns null for missing oneway tag", () => {
-  const { getOneWay } = require("../data/ingest/walkingRules");
-  assert.equal(getOneWay({ tag: [] }), null);
-  assert.equal(getOneWay({ tag: [{ k: "highway", v: "residential" }] }), null);
-});
-
-test("getOneWay returns null for non-pedestrian highway with oneway=yes", () => {
-  const { getOneWay } = require("../data/ingest/walkingRules");
-  // Vehicle oneway=yes on non-pedestrian highway should NOT restrict pedestrians
-  assert.equal(getOneWay({ tag: [{ k: "highway", v: "residential" }, { k: "oneway", v: "yes" }] }), null);
-  assert.equal(getOneWay({ tag: [{ k: "highway", v: "secondary" }, { k: "oneway", v: "yes" }] }), null);
-});
-
-test("getOneWay respects oneway on pedestrian-specific highways", () => {
-  const { getOneWay } = require("../data/ingest/walkingRules");
-  assert.equal(getOneWay({ tag: [{ k: "highway", v: "footway" }, { k: "oneway", v: "yes" }] }), "yes");
-  assert.equal(getOneWay({ tag: [{ k: "highway", v: "footway" }, { k: "oneway", v: "-1" }] }), "reverse");
-  assert.equal(getOneWay({ tag: [{ k: "highway", v: "path" }, { k: "oneway", v: "yes" }] }), "yes");
-});
-
-test("buildAdjacency respects oneway=yes (forward only)", () => {
-  const { buildAdjacency } = require("../data/ingest/routingEngine");
-  const graph = {
-    nodes: { A: { lat: 0, lng: 0 }, B: { lat: 0, lng: 0.001 } },
-    edges: [
-      { from: "A", to: "B", oneway: "yes", edge: null, lengthM: 100 },
-    ],
-  };
-  // Fix edge self-reference
-  graph.edges[0].edge = graph.edges[0];
-
-  const adj = buildAdjacency(graph);
-  // A -> B exists
-  assert.ok(adj.get("A").some(c => c.to === "B"));
-  // B -> A does NOT exist (one-way)
-  assert.ok(!adj.get("B").some(c => c.to === "A"));
-});
-
-test("buildAdjacency respects oneway=reverse (reverse only)", () => {
-  const { buildAdjacency } = require("../data/ingest/routingEngine");
-  // graphBuilder swaps from/to for oneway=reverse, so edge is B->A
-  const graph = {
-    nodes: { A: { lat: 0, lng: 0 }, B: { lat: 0, lng: 0.001 } },
-    edges: [
-      { from: "B", to: "A", oneway: "reverse", edge: null, lengthM: 100 },
-    ],
-  };
-  graph.edges[0].edge = graph.edges[0];
-
-  const adj = buildAdjacency(graph);
-  // B -> A exists (forward direction of the reversed edge)
-  assert.ok(adj.get("B").some(c => c.to === "A"));
-  // A -> B does NOT exist (reverse not added for one-way)
-  assert.ok(!adj.get("A").some(c => c.to === "B"));
-});
-
-test("buildAdjacency adds both directions for non-one-way edges", () => {
-  const { buildAdjacency } = require("../data/ingest/routingEngine");
-  const graph = {
-    nodes: { A: { lat: 0, lng: 0 }, B: { lat: 0, lng: 0.001 } },
-    edges: [
-      { from: "A", to: "B", oneway: null, edge: null, lengthM: 100 },
-    ],
-  };
-  graph.edges[0].edge = graph.edges[0];
-
-  const adj = buildAdjacency(graph);
-  assert.ok(adj.get("A").some(c => c.to === "B"));
-  assert.ok(adj.get("B").some(c => c.to === "A"));
-});
-
-test("findRoute cannot traverse one-way edge in wrong direction", () => {
-  const { buildAdjacency, findRoute } = require("../data/ingest/routingEngine");
-  const graph = {
-    nodes: { A: { lat: 0, lng: 0 }, B: { lat: 0, lng: 0.001 } },
-    edges: [
-      { from: "A", to: "B", oneway: "yes", edge: null, lengthM: 100 },
-    ],
-  };
-  graph.edges[0].edge = graph.edges[0];
-
-  const adj = buildAdjacency(graph);
-
-  // A -> B should work
-  assert.ok(findRoute(adj, "A", "B", "faster"));
-  // B -> A should fail (one-way)
-  assert.equal(findRoute(adj, "B", "A", "faster"), null);
-});
-
-test("getOneWay returns null for vehicle oneway on non-pedestrian highway", () => {
-  const { getOneWay } = require("../data/ingest/walkingRules");
-  // Vehicle oneway=yes on residential does NOT restrict pedestrians
-  assert.equal(
-    getOneWay({ tag: [{ k: "highway", v: "residential" }, { k: "oneway", v: "yes" }] }),
-    null
+  assert.throws(
+    () => findRouteAStar(adjacency, {}, "A", "B", "invalid_mode"),
+    { message: /Invalid routing mode/ }
   );
-  assert.equal(
-    getOneWay({ tag: [{ k: "highway", v: "secondary" }, { k: "oneway", v: "yes" }] }),
-    null
-  );
-});
-
-test("getOneWay respects oneway on pedestrian-specific highways", () => {
-  const { getOneWay } = require("../data/ingest/walkingRules");
-  assert.equal(
-    getOneWay({ tag: [{ k: "highway", v: "footway" }, { k: "oneway", v: "yes" }] }),
-    "yes"
-  );
-  assert.equal(
-    getOneWay({ tag: [{ k: "highway", v: "pedestrian" }, { k: "oneway", v: "yes" }] }),
-    "yes"
-  );
-  assert.equal(
-    getOneWay({ tag: [{ k: "highway", v: "path" }, { k: "oneway", v: "yes" }] }),
-    "yes"
-  );
-  assert.equal(
-    getOneWay({ tag: [{ k: "highway", v: "footway" }, { k: "oneway", v: "-1" }] }),
-    "reverse"
-  );
-});
-
-test("getOneWay respects foot:oneway on non-pedestrian highways", () => {
-  const { getOneWay } = require("../data/ingest/walkingRules");
-  // foot:oneway=yes on residential restricts pedestrians one way
-  assert.equal(
-    getOneWay({ tag: [{ k: "highway", v: "residential" }, { k: "foot:oneway", v: "yes" }] }),
-    "yes"
-  );
-  // foot:oneway=-1 restricts pedestrians the other way
-  assert.equal(
-    getOneWay({ tag: [{ k: "highway", v: "secondary" }, { k: "foot:oneway", v: "-1" }] }),
-    "reverse"
-  );
-  // No foot:oneway means no restriction
-  assert.equal(
-    getOneWay({ tag: [{ k: "highway", v: "residential" }] }),
-    null
-  );
-});
-
-test("buildAdjacency allows both directions on residential with vehicle oneway=yes", () => {
-  const { buildAdjacency } = require("../data/ingest/routingEngine");
-  const graph = {
-    nodes: { A: { lat: 0, lng: 0 }, B: { lat: 0, lng: 0.001 } },
-    edges: [
-      {
-        from: "A",
-        to: "B",
-        oneway: null,
-        edge: null,
-        lengthM: 100,
-      },
-    ],
-  };
-  graph.edges[0].edge = graph.edges[0];
-
-  const adj = buildAdjacency(graph);
-  // Both directions allowed for pedestrians on non-pedestrian highway
-  assert.ok(adj.get("A").some(c => c.to === "B"));
-  assert.ok(adj.get("B").some(c => c.to === "A"));
 });

@@ -1,3 +1,9 @@
+const {
+  deriveEdgeFactors,
+  calculateEdgeRisk,
+  getRiskBand,
+} = require("./riskConfig");
+
 const exposureByHighway = {
   footway: 0,
   pedestrian: 0,
@@ -15,21 +21,29 @@ const exposureByHighway = {
 
 function getTrafficExposure(road) {
   const score = exposureByHighway[road.highway];
-
   return score === undefined ? null : score;
 }
+
 function getEdgeSafetyMetadata(edge) {
+  const factors = deriveEdgeFactors(edge);
+  const risk = calculateEdgeRisk(edge);
   return {
     trafficExposure: getTrafficExposure(edge.road),
     lighting: edge.road.lit ?? null,
     surface: edge.road.surface ?? null,
     sidewalk: edge.road.sidewalk ?? null,
+    factors,
+    risk: Number(risk.toFixed(4)),
+    riskBand: getRiskBand(risk),
     dataSource: "OpenStreetMap",
-    scoreType: "heuristic"
+    scoreType: "heuristic",
   };
 }
 
 module.exports = {
   getTrafficExposure,
-  getEdgeSafetyMetadata
+  getEdgeSafetyMetadata,
+  deriveEdgeFactors,
+  calculateEdgeRisk,
+  getRiskBand,
 };

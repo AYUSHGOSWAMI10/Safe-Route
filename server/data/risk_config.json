@@ -1,0 +1,23 @@
+{
+  "version": "1.0.0",
+  "weights": {
+    "lighting": 0.20,
+    "activity": 0.15,
+    "pedestrian": 0.20,
+    "isolation": 0.15,
+    "roadCondition": 0.15,
+    "incident": 0.15
+  },
+  "k": 2.0,
+  "bands": {
+    "low": 0.30,
+    "medium": 0.60,
+    "high": 1.00
+  },
+  "timeMultipliers": {
+    "day": 1.0,
+    "evening": 1.2,
+    "night": 1.5
+  },
+  "walkingSpeedKph": 5.0
+}
