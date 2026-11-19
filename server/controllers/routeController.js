@@ -10,7 +10,7 @@ const {
   RouteResult,
   NoRouteResult,
 } = require("../data/ingest/routingEngine");
-const { getRiskBand } = require("../data/ingest/riskConfig");
+const { getRiskBand, periodOf } = require("../data/ingest/riskConfig");
 const {
   assembleRoute,
   SAMPLE_PLACE_COORDINATES,
@@ -113,7 +113,7 @@ async function getLocations(req, res) {
 }
 
 async function findRoutes(req, res) {
-  const { source, destination, preference = "balanced", slider } = req.body || {};
+  const { source, destination, preference = "balanced", slider, departAt } = req.body || {};
 
   const src =
     typeof source === "number"
@@ -140,6 +140,8 @@ async function findRoutes(req, res) {
   if (!validModes.has(mode)) {
     return res.status(400).json({ error: "Choose Faster, Balanced, or Safer." });
   }
+
+  const period = periodOf(departAt);
 
   // Parse optional custom slider value if provided
   let customSlider = null;
@@ -186,7 +188,10 @@ async function findRoutes(req, res) {
     return res.status(404).json({ error: "One or both locations are outside the walking graph." });
   }
 
-  const queryForMode = mode === "custom" && customSlider !== null ? { slider: customSlider } : mode;
+  const queryForMode =
+    mode === "custom" && customSlider !== null
+      ? { slider: customSlider, period }
+      : { mode, period };
   const selectedResult = findRoute(adjacency, src, dst, queryForMode);
   if (!isRouteFound(selectedResult)) {
     return res.status(404).json({
@@ -196,15 +201,15 @@ async function findRoutes(req, res) {
   }
 
   const candidateProfiles = [
-    { mode: "faster", label: "Route A (Faster)", slider: 0 },
-    { mode: "balanced", label: "Route B (Balanced)", slider: 0.5 },
-    { mode: "safer", label: "Route C (Safer)", slider: 1.0 },
+    { mode: "faster", label: "Route A (Faster)", slider: 0, queryMode: { mode: "faster", slider: 0, period } },
+    { mode: "balanced", label: "Route B (Balanced)", slider: 0.5, queryMode: { mode: "balanced", slider: 0.5, period } },
+    { mode: "safer", label: "Route C (Safer)", slider: 1.0, queryMode: { mode: "safer", slider: 1.0, period } },
   ];
 
   if (customSlider !== null) {
     candidateProfiles.push({
       mode: "custom",
-      queryMode: { slider: customSlider },
+      queryMode: { slider: customSlider, period },
       label: `Route Custom (${customSlider})`,
       slider: customSlider,
     });
@@ -218,7 +223,7 @@ async function findRoutes(req, res) {
     if (!isRouteFound(result)) continue;
 
     const pathKey = result.nodes.join("->");
-    const stats = calculateRouteStats(result.nodes, adjacency, isPlaceGraph);
+    const stats = calculateRouteStats(result.nodes, adjacency, isPlaceGraph, { period });
 
     if (routesByPath.has(pathKey)) {
       const existing = routesByPath.get(pathKey);
@@ -228,6 +233,7 @@ async function findRoutes(req, res) {
       if (prof.mode === mode) {
         existing.name = prof.label;
         existing.preference = prof.mode;
+        existing.slider = prof.slider;
       }
     } else {
       routesByPath.set(pathKey, {
@@ -254,6 +260,14 @@ async function findRoutes(req, res) {
         cost: Number(result.weightedCost.toFixed(2)),
         preference: prof.mode,
         slider: prof.slider,
+        period,
+        nodesExpanded: result.nodesExpanded ?? 0,
+        computeTimeMs: result.computeTimeMs ?? 0,
+        metadata: {
+          nodesExpanded: result.nodesExpanded ?? 0,
+          computeTimeMs: result.computeTimeMs ?? 0,
+          period,
+        },
         profiles: [prof.mode],
         mergedProfiles: [prof.mode],
         merged: false,
@@ -275,11 +289,24 @@ async function findRoutes(req, res) {
     recommendedName = routes[0].name;
   }
 
+  const totalNodesExpanded = routes.reduce((acc, r) => acc + (r.nodesExpanded || 0), 0);
+  const totalComputeTimeMs = Number(
+    routes.reduce((acc, r) => acc + (r.computeTimeMs || 0), 0).toFixed(3)
+  );
+
   return res.json({
     source: src,
     destination: dst,
     routes,
     recommended: recommendedName,
+    metadata: {
+      period,
+      departAt: departAt ? (departAt instanceof Date ? departAt.toISOString() : new Date(departAt).toISOString()) : null,
+      nodesExpanded: totalNodesExpanded,
+      computeTimeMs: totalComputeTimeMs,
+      totalNodesExpanded,
+      totalComputeTimeMs,
+    },
   });
 }
 
