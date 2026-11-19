@@ -11,6 +11,10 @@ const {
   NoRouteResult,
 } = require("../data/ingest/routingEngine");
 const { getRiskBand } = require("../data/ingest/riskConfig");
+const {
+  assembleRoute,
+  SAMPLE_PLACE_COORDINATES,
+} = require("../data/ingest/routeAssembly");
 
 let cachedWalkingGraph = null;
 let cachedWalkingAdjacency = null;
@@ -31,25 +35,35 @@ async function getRoads() {
 function buildPlaceGraph(roads) {
   const nodes = {};
   for (const road of roads) {
-    nodes[road.source] = { name: road.source };
-    nodes[road.destination] = { name: road.destination };
+    const srcCoord = SAMPLE_PLACE_COORDINATES[road.source] || { lat: 27.5700, lng: 77.6750 };
+    const dstCoord = SAMPLE_PLACE_COORDINATES[road.destination] || { lat: 27.5850, lng: 77.6950 };
+    nodes[road.source] = { name: road.source, ...srcCoord };
+    nodes[road.destination] = { name: road.destination, ...dstCoord };
   }
 
-  const edges = roads.map((road, idx) => ({
-    id: `edge_${idx}`,
-    from: road.source,
-    to: road.destination,
-    lengthM: (road.distance || 0) * 1000,
-    road: { name: `${road.source} - ${road.destination}` },
-    safety: {
-      trafficExposure: Number(
-        Math.max(0, Math.min(5, (1 - (road.safetyScore ?? 50) / 100) * 5)).toFixed(2)
-      ),
-    },
-    distance: road.distance,
-    estimatedTime: road.estimatedTime,
-    safetyScore: road.safetyScore,
-  }));
+  const edges = roads.map((road, idx) => {
+    const srcCoord = SAMPLE_PLACE_COORDINATES[road.source] || { lat: 27.5700, lng: 77.6750 };
+    const dstCoord = SAMPLE_PLACE_COORDINATES[road.destination] || { lat: 27.5850, lng: 77.6950 };
+    return {
+      id: `edge_${idx}`,
+      from: road.source,
+      to: road.destination,
+      geometry: [
+        [srcCoord.lng, srcCoord.lat],
+        [dstCoord.lng, dstCoord.lat],
+      ],
+      lengthM: (road.distance || 0) * 1000,
+      road: { name: `${road.source} - ${road.destination}` },
+      safety: {
+        trafficExposure: Number(
+          Math.max(0, Math.min(5, (1 - (road.safetyScore ?? 50) / 100) * 5)).toFixed(2)
+        ),
+      },
+      distance: road.distance,
+      estimatedTime: road.estimatedTime,
+      safetyScore: road.safetyScore,
+    };
+  });
 
   return { nodes, edges };
 }
@@ -81,71 +95,8 @@ function loadWalkingGraph(customPath) {
   return { graph, adjacency };
 }
 
-function calculateRouteStats(nodeIds, adjacency, isPlaceGraph = true) {
-  let totalDistance = 0;
-  let totalTime = 0;
-  let weightedSafetySum = 0;
-  let totalLengthM = 0;
-  let exposureWeightedDistanceM = 0;
-
-  for (let i = 0; i < nodeIds.length - 1; i++) {
-    const from = nodeIds[i];
-    const to = nodeIds[i + 1];
-    const neighbors = adjacency.get(from) || [];
-    const connection = neighbors.find((c) => c.to === to);
-
-    if (!connection || !connection.edge) {
-      throw new Error(`Missing graph edge between ${from} and ${to}`);
-    }
-
-    const edge = connection.edge;
-
-    if (isPlaceGraph) {
-      const dist = edge.distance ?? (edge.lengthM ? edge.lengthM / 1000 : 0);
-      const time = edge.estimatedTime ?? Math.max(1, Math.round((dist * 1000) / 83.33));
-      const safety = edge.safetyScore ?? 50;
-
-      totalDistance += dist;
-      totalTime += time;
-      weightedSafetySum += safety * dist;
-    } else {
-      const lengthM = edge.lengthM || 0;
-      totalLengthM += lengthM;
-
-      const exposure = edge.safety?.trafficExposure;
-      if (typeof exposure === "number" && exposure >= 0 && exposure <= 5) {
-        exposureWeightedDistanceM += (exposure / 5) * lengthM;
-      }
-    }
-  }
-
-  if (isPlaceGraph) {
-    const distanceKm = Number(totalDistance.toFixed(1));
-    const estimatedTimeMin = totalTime;
-    const safetyScore = totalDistance > 0 ? Math.round(weightedSafetySum / totalDistance) : 50;
-
-    return {
-      distanceKm,
-      estimatedTimeMin,
-      safetyScore,
-      riskBand: getRiskBand(1 - safetyScore / 100),
-    };
-  }
-
-  const distanceKm = Number((totalLengthM / 1000).toFixed(1));
-  const estimatedTimeMin = Math.max(1, Math.round(totalLengthM / 83.33));
-  let safetyScore = 100;
-  if (totalLengthM > 0) {
-    const avgExposure = exposureWeightedDistanceM / totalLengthM;
-    safetyScore = Math.max(0, Math.min(100, Math.round((1 - avgExposure) * 100)));
-  }
-
-  return {
-    distanceKm,
-    estimatedTimeMin,
-    safetyScore,
-    riskBand: getRiskBand(1 - safetyScore / 100),
-  };
+function calculateRouteStats(nodeIds, adjacency, isPlaceGraph = true, options = {}) {
+  return assembleRoute(nodeIds, adjacency, { isPlaceGraph, ...options });
 }
 
 async function getLocations(req, res) {
@@ -283,9 +234,23 @@ async function findRoutes(req, res) {
         name: prof.label,
         path: result.nodes,
         distance: stats.distanceKm,
+        distanceKm: stats.distanceKm,
+        distanceM: stats.distanceM,
         estimatedTime: stats.estimatedTimeMin,
+        estimatedTimeMin: stats.estimatedTimeMin,
+        estimatedTimeSec: stats.estimatedTimeSec,
         safetyScore: stats.safetyScore,
+        riskScore: stats.riskScore,
         riskBand: stats.riskBand,
+        geometry: stats.geometry,
+        segments: stats.segments,
+        highRiskPercentage: stats.highRiskPercentage,
+        highRiskLengthM: stats.highRiskLengthM,
+        worstSegment: stats.worstSegment,
+        riskBreakdown: stats.riskBreakdown,
+        dataConfidence: stats.dataConfidence,
+        explanations: stats.explanations,
+        warnings: stats.warnings,
         cost: Number(result.weightedCost.toFixed(2)),
         preference: prof.mode,
         slider: prof.slider,
