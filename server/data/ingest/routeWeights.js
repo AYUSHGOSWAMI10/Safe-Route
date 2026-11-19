@@ -63,6 +63,11 @@ function getEdgeCost(edge, modeOrOptions = "faster", customConfig) {
       throw new Error(`Unknown routing mode: ${modeOrOptions}`);
     }
   } else if (modeOrOptions && typeof modeOrOptions === "object") {
+    if (typeof modeOrOptions.mode === "string") {
+      if (modeOrOptions.mode === "faster") slider = 0;
+      else if (modeOrOptions.mode === "balanced") slider = 0.5;
+      else if (modeOrOptions.mode === "safer") slider = 1.0;
+    }
     if (Number.isFinite(modeOrOptions.slider)) slider = modeOrOptions.slider;
     if (Number.isFinite(modeOrOptions.k)) k = modeOrOptions.k;
     if (modeOrOptions.period) period = modeOrOptions.period;
