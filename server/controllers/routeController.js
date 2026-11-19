@@ -215,7 +215,8 @@ async function findRoutes(req, res) {
     });
   }
 
-  const routesByPath = new Map();
+  const evaluatedProfiles = [];
+  const pathOccurrences = new Map();
 
   for (const prof of candidateProfiles) {
     const qMode = prof.queryMode || prof.mode;
@@ -223,71 +224,62 @@ async function findRoutes(req, res) {
     if (!isRouteFound(result)) continue;
 
     const pathKey = result.nodes.join("->");
-    const stats = calculateRouteStats(result.nodes, adjacency, isPlaceGraph, { period });
+    if (!pathOccurrences.has(pathKey)) {
+      pathOccurrences.set(pathKey, []);
+    }
+    pathOccurrences.get(pathKey).push(prof.mode);
 
-    if (routesByPath.has(pathKey)) {
-      const existing = routesByPath.get(pathKey);
-      existing.profiles.push(prof.mode);
-      existing.mergedProfiles.push(prof.mode);
-      existing.merged = true;
-      if (prof.mode === mode) {
-        existing.name = prof.label;
-        existing.preference = prof.mode;
-        existing.slider = prof.slider;
-      }
-    } else {
-      routesByPath.set(pathKey, {
-        name: prof.label,
-        path: result.nodes,
-        distance: stats.distanceKm,
-        distanceKm: stats.distanceKm,
-        distanceM: stats.distanceM,
-        estimatedTime: stats.estimatedTimeMin,
-        estimatedTimeMin: stats.estimatedTimeMin,
-        estimatedTimeSec: stats.estimatedTimeSec,
-        safetyScore: stats.safetyScore,
-        riskScore: stats.riskScore,
-        riskBand: stats.riskBand,
-        geometry: stats.geometry,
-        segments: stats.segments,
-        highRiskPercentage: stats.highRiskPercentage,
-        highRiskLengthM: stats.highRiskLengthM,
-        worstSegment: stats.worstSegment,
-        riskBreakdown: stats.riskBreakdown,
-        dataConfidence: stats.dataConfidence,
-        explanations: stats.explanations,
-        warnings: stats.warnings,
-        cost: Number(result.weightedCost.toFixed(2)),
-        preference: prof.mode,
-        slider: prof.slider,
-        period,
+    evaluatedProfiles.push({ prof, result, pathKey });
+  }
+
+  const routes = evaluatedProfiles.map(({ prof, result, pathKey }) => {
+    const stats = calculateRouteStats(result.nodes, adjacency, isPlaceGraph, { period });
+    const sharedProfiles = pathOccurrences.get(pathKey) || [prof.mode];
+    const isShared = sharedProfiles.length > 1;
+
+    return {
+      name: prof.label,
+      path: result.nodes,
+      distance: stats.distanceKm,
+      distanceKm: stats.distanceKm,
+      distanceM: stats.distanceM,
+      estimatedTime: stats.estimatedTimeMin,
+      estimatedTimeMin: stats.estimatedTimeMin,
+      estimatedTimeSec: stats.estimatedTimeSec,
+      safetyScore: stats.safetyScore,
+      riskScore: stats.riskScore,
+      riskBand: stats.riskBand,
+      geometry: stats.geometry,
+      segments: stats.segments,
+      highRiskPercentage: stats.highRiskPercentage,
+      highRiskLengthM: stats.highRiskLengthM,
+      worstSegment: stats.worstSegment,
+      riskBreakdown: stats.riskBreakdown,
+      dataConfidence: stats.dataConfidence,
+      explanations: stats.explanations,
+      warnings: stats.warnings,
+      cost: Number(result.weightedCost.toFixed(2)),
+      preference: prof.mode,
+      slider: prof.slider,
+      period,
+      nodesExpanded: result.nodesExpanded ?? 0,
+      computeTimeMs: result.computeTimeMs ?? 0,
+      metadata: {
         nodesExpanded: result.nodesExpanded ?? 0,
         computeTimeMs: result.computeTimeMs ?? 0,
-        metadata: {
-          nodesExpanded: result.nodesExpanded ?? 0,
-          computeTimeMs: result.computeTimeMs ?? 0,
-          period,
-        },
-        profiles: [prof.mode],
-        mergedProfiles: [prof.mode],
-        merged: false,
-      });
-    }
-  }
+        period,
+      },
+      profiles: [prof.mode],
+      mergedProfiles: sharedProfiles,
+      merged: isShared,
+    };
+  });
 
-  const routes = Array.from(routesByPath.values());
-  let recommendedName = null;
-
-  for (const r of routes) {
-    if (r.profiles.includes(mode)) {
-      recommendedName = r.name;
-      break;
-    }
+  let recommendedRoute = routes.find((r) => r.preference === mode);
+  if (!recommendedRoute) {
+    recommendedRoute = routes.find((r) => r.profiles.includes(mode));
   }
-
-  if (!recommendedName && routes.length > 0) {
-    recommendedName = routes[0].name;
-  }
+  const recommendedName = recommendedRoute ? recommendedRoute.name : (routes[0]?.name || null);
 
   const totalNodesExpanded = routes.reduce((acc, r) => acc + (r.nodesExpanded || 0), 0);
   const totalComputeTimeMs = Number(

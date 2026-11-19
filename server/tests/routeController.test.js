@@ -381,17 +381,19 @@ test("POST /api/routes/find merges identical routes and records merged profiles"
   const body = res.body;
 
   // Faster and Balanced share the same shortest path on sampleRoads
-  // Verify they were merged into a single entry
+  // Verify that shared paths are marked as merged with mergedProfiles
   const mergedRoute = body.routes.find((r) => r.merged === true);
   assert.ok(mergedRoute, "Should have a merged route");
   assert.ok(Array.isArray(mergedRoute.mergedProfiles), "mergedProfiles should be an array");
   assert.ok(mergedRoute.mergedProfiles.includes("faster"), "Should include faster in merged profiles");
   assert.ok(mergedRoute.mergedProfiles.includes("balanced"), "Should include balanced in merged profiles");
 
-  // Unique paths should not have identical entries
-  const paths = body.routes.map((r) => r.path.join("->"));
-  const uniquePaths = new Set(paths);
-  assert.equal(paths.length, uniquePaths.size, "All returned routes must have unique paths (no duplicates)");
+  // All 3 candidate routes (Faster, Balanced, Safer) should be returned for comparison
+  assert.equal(body.routes.length, 3, "All 3 routes should be returned for user comparison");
+  assert.ok(body.routes.some((r) => r.name === "Route A (Faster)"));
+  assert.ok(body.routes.some((r) => r.name === "Route B (Balanced)"));
+  assert.ok(body.routes.some((r) => r.name === "Route C (Safer)"));
+  assert.equal(body.recommended, "Route B (Balanced)");
 });
 
 test("POST /api/routes/find includes custom slider route when slider is provided", async () => {
