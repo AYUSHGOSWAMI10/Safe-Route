@@ -406,3 +406,156 @@ footer {
     padding: 18px;
   }
 }
+
+/** Route Map**/
+
+/* Route Map */
+
+.map-section {
+  margin-top: 28px;
+}
+
+.map-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.map-heading h2 {
+  margin: 0;
+}
+
+.map-heading p {
+  color: #718079;
+  font-size: 13px;
+  margin: 5px 0 0;
+}
+
+.map-heading span {
+  color: #718079;
+  font-size: 12px;
+}
+
+.route-map-container {
+  height: 380px;
+  width: 100%;
+  border: 1px solid #dfe6e0;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.route-map {
+  height: 100%;
+  width: 100%;
+}
+
+.map-placeholder {
+  min-height: 250px;
+  background: #edf2ee;
+  border: 1px solid #dfe6e0;
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 25px;
+  text-align: center;
+}
+
+.map-placeholder h3 {
+  margin: 0 0 10px;
+  font-size: 17px;
+}
+
+.map-placeholder p {
+  max-width: 450px;
+  color: #718079;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.map-note {
+  color: #718079;
+  font-size: 12px;
+  margin-top: 8px;
+}
+
+.map-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  margin-top: 12px;
+  color: #718079;
+  font-size: 12px;
+}
+
+.map-legend span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.map-legend i {
+  display: inline-block;
+}
+
+.start-dot,
+.end-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.start-dot {
+  background: #16845e;
+}
+
+.end-dot {
+  background: #dc5555;
+}
+
+.route-line {
+  width: 20px;
+  height: 4px;
+  background: #16845e;
+  border-radius: 5px;
+}
+
+@media (max-width: 560px) {
+  .route-map-container {
+    height: 300px;
+  }
+
+  .map-heading {
+    align-items: flex-start;
+    gap: 10px;
+  }
+}
+
+
+.location-search {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.location-search label {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.location-search input {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 15px;
+  outline: none;
+}
+
+.location-search input:focus {
+  border-color: #16845b;
+  box-shadow: 0 0 0 2px rgba(22, 132, 91, 0.12);
+}

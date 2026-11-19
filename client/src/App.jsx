@@ -1,348 +1,360 @@
-import { useEffect, useState } from "react";
-import RouteCard from "./components/RouteCard.jsx";
-import { findRoutes, getLocations } from "./services/routes.js";
-import { signup, login, getMe } from "./services/auth.js";
 
-const preferences = ["Faster", "Balanced", "Safer"];
-const TOKEN_KEY = "saferoute_token";
+import { useState } from "react";
+import MapPanel from "./MapPanel";
+import "./style.css";
 
-export default function App() {
-  const [locations, setLocations] = useState([]);
-  const [source, setSource] = useState("");
-  const [destination, setDestination] = useState("");
-  const [preference, setPreference] = useState("Balanced");
-  const [result, setResult] = useState(null);
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
+const initialRoutes = [
+  {
+    id: "fast",
+    name: "Fastest",
+    time: "12 min",
+    distance: "1.8 km",
+    risk: 72,
+    color: "#dc5555",
+    description: "Shortest travel time, but higher estimated risk.",
+    highRisk: "35%",
+  },
+  {
+    id: "balanced",
+    name: "Balanced",
+    time: "15 min",
+    distance: "2.1 km",
+    risk: 48,
+    color: "#d99b35",
+    description: "A balance between travel time and estimated risk.",
+    highRisk: "18%",
+  },
+  {
+    id: "safe",
+    name: "Safer",
+    time: "19 min",
+    distance: "2.5 km",
+    risk: 25,
+    color: "#269b69",
+    description: "Lower estimated risk, with some additional travel time.",
+    highRisk: "5%",
+  },
+];
 
-  const [authMode, setAuthMode] = useState("login");
-  const [token, setToken] = useState(
-    () => sessionStorage.getItem(TOKEN_KEY) || ""
-  );
-  const [user, setUser] = useState(null);
-  const [authLoading, setAuthLoading] = useState(true);
-  const [authError, setAuthError] = useState("");
-  const [authMessage, setAuthMessage] = useState("");
+const factors = [
+  { name: "Street Lighting", value: 35 },
+  { name: "Human Activity", value: 70 },
+  { name: "Incident History", value: 25 },
+  { name: "Pedestrian Infrastructure", value: 80 },
+  { name: "Road Condition", value: 60 },
+  { name: "Road Isolation", value: 30 },
+];
 
-  useEffect(() => {
-    getLocations()
-      .then((items) => {
-        setLocations(items);
-        if (items.length > 1) {
-          setSource(items[0]);
-          setDestination(items[items.length - 1]);
-        }
-      })
-      .catch((reason) => setError(reason.message));
-  }, []);
+function App() {
+  const [source, setSource] = useState(null);
+  const [destination, setDestination] = useState(null);
 
-  useEffect(() => {
-    let active = true;
+  const [sourceName, setSourceName] = useState("");
+  const [destinationName, setDestinationName] = useState("");
 
-    if (!token) {
-      setAuthLoading(false);
-      return () => {
-        active = false;
-      };
-    }
+  const [slider, setSlider] = useState(50);
+  const [selectedRoute, setSelectedRoute] = useState("balanced");
+  const [showResults, setShowResults] = useState(true);
 
-    getMe(token)
-      .then((profile) => {
-        if (active) setUser(profile);
-      })
-      .catch(() => {
-        sessionStorage.removeItem(TOKEN_KEY);
-        if (active) {
-          setToken("");
-          setUser(null);
-        }
-      })
-      .finally(() => {
-        if (active) setAuthLoading(false);
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [token]);
-
-  async function handleAuthSubmit(event) {
-    event.preventDefault();
-    setAuthError("");
-    setAuthMessage("");
-    setAuthLoading(true);
-
-    const form = new FormData(event.currentTarget);
-    const email = form.get("email");
-    const password = form.get("password");
-
-    try {
-      let data;
-
-      if (authMode === "signup") {
-        const name = form.get("name");
-        data = await signup({ name, email, password });
-      } else {
-        data = await login({ email, password });
-      }
-
-      sessionStorage.setItem(TOKEN_KEY, data.token);
-      setUser(data.user);
-      setToken(data.token);
-      setAuthMessage("");
-    } catch (reason) {
-      setAuthError(reason.message);
-    } finally {
-      setAuthLoading(false);
-    }
-  }
-
-  function handleLogout() {
-    sessionStorage.removeItem(TOKEN_KEY);
-    setToken("");
-    setUser(null);
-    setResult(null);
-    setAuthError("");
-    setAuthMessage("You have been logged out.");
-  }
-
-  async function handleSubmit(event) {
-    event.preventDefault();
-    setError("");
-    setLoading(true);
-
-    try {
-      const data = await findRoutes({
-        source,
-        destination,
-        preference: preference.toLowerCase(),
-      });
-      setResult(data);
-    } catch (reason) {
-      setResult(null);
-      setError(reason.message);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  const recommendedRoute = result?.routes.find(
-    (route) => route.name === result.recommended
-  );
-
-  if (authLoading && token && !user) {
-    return (
-      <main className="page-shell">
-        <p>Checking your account...</p>
-      </main>
+  const handleSourceSelect = (point) => {
+    setSource(point);
+    setSourceName(
+      `${point.lat.toFixed(4)}, ${point.lng.toFixed(4)}`
     );
-  }
+    setShowResults(false);
+  };
+
+  const handleDestinationSelect = (point) => {
+    setDestination(point);
+    setDestinationName(
+      `${point.lat.toFixed(4)}, ${point.lng.toFixed(4)}`
+    );
+    setShowResults(false);
+  };
+
+  const findRoutes = () => {
+    if (!source || !destination) {
+      alert("Please select both source and destination on the map.");
+      return;
+    }
+
+    setShowResults(true);
+  };
+
+  const activeRoute = initialRoutes.find(
+    (route) => route.id === selectedRoute
+  );
+
+  const handleSliderChange = (event) => {
+    const value = Number(event.target.value);
+    setSlider(value);
+
+    if (value < 33) {
+      setSelectedRoute("fast");
+    } else if (value < 67) {
+      setSelectedRoute("balanced");
+    } else {
+      setSelectedRoute("safe");
+    }
+  };
 
   return (
-    <main className="page-shell">
+    <div className="app">
       <header className="topbar">
-        <a className="brand" href="/">SafeRoute</a>
-        {user ? (
-          <div className="account-bar">
-            <span className="project-label">Hi, {user.name}</span>
-            <button className="text-button" onClick={handleLogout}>
-              Log out
-            </button>
+        <div className="brand">
+          <div className="brand-icon">S</div>
+          <div>
+            <h2>SafeRoute</h2>
+            <span>Risk-aware route planning</span>
           </div>
-        ) : (
-          <span className="project-label">College project · MVP</span>
-        )}
+        </div>
+
+        <nav className="top-nav">
+          <a href="#planner">Route Planner</a>
+          <a href="#insights">Safety Insights</a>
+        </nav>
+
+        <div className="profile">
+          <div className="profile-avatar">U</div>
+          <span>User</span>
+        </div>
       </header>
 
-      {!user ? (
-        <>
-          <section className="intro">
-            <p className="eyebrow">WELCOME TO SAFEROUTE</p>
-            <h1>Travel with more confidence</h1>
-            <p>Create an account or log in to access your route planner.</p>
-          </section>
+      <main className="dashboard">
+        <section className="welcome-section">
+          <div>
+            <p className="eyebrow">SMARTER ROUTES. BETTER AWARENESS.</p>
+            <h1>Plan your journey with confidence.</h1>
+            <p className="welcome-text">
+              Compare routes based on travel time and estimated road risk.
+              Choose the balance that works for you.
+            </p>
+          </div>
+          <div className="status-pill">
+            <span></span> Demo mode
+          </div>
+        </section>
 
-          <section className="planner auth-panel">
-            <div className="auth-tabs">
-              <button
-                type="button"
-                className={authMode === "login" ? "auth-tab active" : "auth-tab"}
-                onClick={() => {
-                  setAuthMode("login");
-                  setAuthError("");
-                  setAuthMessage("");
-                }}
-              >
-                Login
-              </button>
-              <button
-                type="button"
-                className={authMode === "signup" ? "auth-tab active" : "auth-tab"}
-                onClick={() => {
-                  setAuthMode("signup");
-                  setAuthError("");
-                  setAuthMessage("");
-                }}
-              >
-                Sign up
+        <section className="planner-layout" id="planner">
+          <div className="planner-left">
+            <div className="panel location-panel">
+              <div className="section-heading">
+                <div>
+                  <h3>Plan your journey</h3>
+                  <p>Choose where your journey begins and ends.</p>
+                </div>
+                <span className="step-number">01</span>
+              </div>
+
+              <div className="location-inputs">
+                <label>
+                  <span className="input-marker source-marker"></span>
+                  Starting point
+                  <input
+                    type="text"
+                    placeholder="Select on the map"
+                    value={sourceName}
+                    onChange={(e) => setSourceName(e.target.value)}
+                  />
+                </label>
+
+                <label>
+                  <span className="input-marker destination-marker"></span>
+                  Destination
+                  <input
+                    type="text"
+                    placeholder="Select on the map"
+                    value={destinationName}
+                    onChange={(e) => setDestinationName(e.target.value)}
+                  />
+                </label>
+              </div>
+
+              <button className="primary-button" onClick={findRoutes}>
+                Find Routes <span>→</span>
               </button>
             </div>
 
-            <h2>{authMode === "login" ? "Welcome back" : "Create your account"}</h2>
+            <div className="panel preference-panel">
+              <div className="section-heading">
+                <div>
+                  <h3>Route preference</h3>
+                  <p>How much do you value lower estimated risk?</p>
+                </div>
+                <span className="step-number">02</span>
+              </div>
 
-            <form onSubmit={handleAuthSubmit}>
-              {authMode === "signup" && (
-                <label className="auth-field">
-                  Full name
-                  <input
-                    name="name"
-                    type="text"
-                    minLength={2}
-                    maxLength={80}
-                    autoComplete="name"
-                    required
-                  />
-                </label>
+              <div className="preference-labels">
+                <span>Fastest</span>
+                <strong>{slider}% risk preference</strong>
+                <span>Safer</span>
+              </div>
+
+              <input
+                className="risk-slider"
+                type="range"
+                min="0"
+                max="100"
+                value={slider}
+                onChange={handleSliderChange}
+              />
+
+              <div className="slider-caption">
+                <span>Prioritize time</span>
+                <span>Prioritize lower risk</span>
+              </div>
+            </div>
+
+            <MapPanel
+              source={source}
+              destination={destination}
+              onSourceSelect={handleSourceSelect}
+              onDestinationSelect={handleDestinationSelect}
+            />
+          </div>
+
+          <aside className="planner-right">
+            <div className="panel results-panel">
+              <div className="section-heading">
+                <div>
+                  <h3>Route recommendations</h3>
+                  <p>Compare your available options.</p>
+                </div>
+                <span className="step-number">03</span>
+              </div>
+
+              {!showResults ? (
+                <div className="empty-state">
+                  <div className="empty-icon">⌖</div>
+                  <h4>Select your locations</h4>
+                  <p>
+                    Click the map once for your starting point and again for
+                    your destination.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <div className="route-list">
+                    {initialRoutes.map((route) => (
+                      <button
+                        key={route.id}
+                        className={`route-option ${
+                          selectedRoute === route.id ? "selected" : ""
+                        }`}
+                        onClick={() => setSelectedRoute(route.id)}
+                      >
+                        <div className="route-option-top">
+                          <strong>{route.name}</strong>
+                          {route.id === "safe" && (
+                            <span className="recommended-tag">
+                              Lower risk
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="route-metrics">
+                          <span>{route.time}</span>
+                          <span>{route.distance}</span>
+                        </div>
+
+                        <div className="risk-line">
+                          <span>Estimated risk</span>
+                          <strong style={{ color: route.color }}>
+                            {route.risk}/100
+                          </strong>
+                        </div>
+
+                        <div className="risk-track">
+                          <div
+                            style={{
+                              width: `${route.risk}%`,
+                              background: route.color,
+                            }}
+                          ></div>
+                        </div>
+
+                        <small>{route.description}</small>
+                      </button>
+                    ))}
+                  </div>
+
+                  {activeRoute && (
+                    <div className="selected-summary">
+                      <h4>Selected: {activeRoute.name}</h4>
+                      <p>
+                        {activeRoute.time} · {activeRoute.distance}
+                      </p>
+                      <p>
+                        High-risk road segments: {activeRoute.highRisk}
+                      </p>
+                    </div>
+                  )}
+                </>
               )}
+            </div>
 
-              <label className="auth-field">
-                Email address
-                <input
-                  name="email"
-                  type="email"
-                  autoComplete="email"
-                  required
-                />
-              </label>
+            <div className="panel insight-panel" id="insights">
+              <div className="section-heading">
+                <div>
+                  <h3>Safety breakdown</h3>
+                  <p>Illustrative factor scores for the selected route.</p>
+                </div>
+              </div>
 
-              <label className="auth-field">
-                Password
-                <input
-                  name="password"
-                  type="password"
-                  minLength={8}
-                  maxLength={72}
-                  autoComplete={authMode === "login" ? "current-password" : "new-password"}
-                  required
-                />
-              </label>
+              {factors.map((factor) => (
+                <div className="factor" key={factor.name}>
+                  <div className="factor-heading">
+                    <span>{factor.name}</span>
+                    <strong>{factor.value}/100</strong>
+                  </div>
+                  <div className="factor-track">
+                    <div
+                      style={{
+                        width: `${factor.value}%`,
+                        background:
+                          factor.value >= 70
+                            ? "#d99b35"
+                            : factor.value >= 40
+                            ? "#5289c7"
+                            : "#269b69",
+                      }}
+                    ></div>
+                  </div>
+                </div>
+              ))}
 
-              {authError && <p className="error" role="alert">{authError}</p>}
-              {authMessage && <p role="status">{authMessage}</p>}
+              <div className="explanation">
+                <strong>Understanding the scores</strong>
+                <p>
+                  Each factor contributes to the estimated road-risk score.
+                  Higher factor values indicate a greater concern in this
+                  illustrative demo.
+                </p>
+              </div>
+            </div>
+          </aside>
+        </section>
 
-              <button className="submit-button" type="submit" disabled={authLoading}>
-                {authLoading
-                  ? "Please wait..."
-                  : authMode === "login"
-                    ? "Log in"
-                    : "Create account"}
-              </button>
-            </form>
-
-            <p className="auth-switch">
-              {authMode === "login"
-                ? "New to SafeRoute?"
-                : "Already have an account?"}{" "}
-              <button
-                className="text-button"
-                type="button"
-                onClick={() => {
-                  setAuthMode(authMode === "login" ? "signup" : "login");
-                  setAuthError("");
-                  setAuthMessage("");
-                }}
-              >
-                {authMode === "login" ? "Sign up" : "Log in"}
-              </button>
+        <section className="disclaimer">
+          <span>ⓘ</span>
+          <div>
+            <strong>Important safety information</strong>
+            <p>
+              SafeRoute provides estimated risk information based on available
+              data. Scores shown here are illustrative demo values and do not
+              guarantee personal safety. Always use your own judgment.
             </p>
-          </section>
-        </>
-      ) : (
-        <>
-          <section className="intro">
-            <p className="eyebrow">A DIFFERENT WAY TO THINK ABOUT ROUTES</p>
-            <h1>Risk-aware route planning</h1>
-            <p>Compare possible routes by time, distance, and a sample safety score.</p>
-          </section>
+          </div>
+        </section>
 
-          <section className="planner" aria-labelledby="planner-title">
-            <h2 id="planner-title">Plan your route</h2>
-            <form onSubmit={handleSubmit}>
-              <div className="form-row">
-                <label>
-                  Starting point
-                  <select value={source} onChange={(event) => setSource(event.target.value)} required>
-                    {locations.map((location) => <option key={location}>{location}</option>)}
-                  </select>
-                </label>
-                <label>
-                  Destination
-                  <select value={destination} onChange={(event) => setDestination(event.target.value)} required>
-                    {locations.map((location) => <option key={location}>{location}</option>)}
-                  </select>
-                </label>
-              </div>
-
-              <fieldset>
-                <legend>Route preference</legend>
-                <div className="preference-options">
-                  {preferences.map((item) => (
-                    <button
-                      className={preference === item ? "preference selected" : "preference"}
-                      key={item}
-                      onClick={() => setPreference(item)}
-                      type="button"
-                    >
-                      {item}
-                    </button>
-                  ))}
-                </div>
-              </fieldset>
-
-              <button className="submit-button" disabled={loading || locations.length < 2} type="submit">
-                {loading ? "Finding routes…" : "Find route"}
-              </button>
-            </form>
-            {error && <p className="error" role="alert">{error}</p>}
-          </section>
-
-          {result && recommendedRoute && (
-            <section className="results" aria-live="polite">
-              <div className="results-heading">
-                <div>
-                  <p className="eyebrow">YOUR OPTIONS</p>
-                  <h2>Route comparison</h2>
-                </div>
-                <p className="result-caption">{result.source} to {result.destination}</p>
-              </div>
-              <div className="recommended-summary">
-                <div>
-                  <p className="eyebrow">RECOMMENDED · {preference.toUpperCase()}</p>
-                  <h3>{recommendedRoute.name}</h3>
-                </div>
-                <div className="summary-stats">
-                  <strong>{recommendedRoute.estimatedTime} min</strong><span>time</span>
-                  <strong>{recommendedRoute.distance} km</strong><span>distance</span>
-                  <strong>{recommendedRoute.safetyScore}/100</strong><span>safety</span>
-                </div>
-              </div>
-              <div className="route-list">
-                {result.routes.map((route) => (
-                  <RouteCard
-                    key={route.name}
-                    route={route}
-                    recommended={route.name === result.recommended}
-                  />
-                ))}
-              </div>
-            </section>
-          )}
-        </>
-      )}
-
-      <footer>
-        Safety scores are estimated using sample data and do not guarantee real-world safety.
-      </footer>
-    </main>
+        <footer className="footer">
+          <span>© 2026 SafeRoute</span>
+          <span>Powered by OpenStreetMap</span>
+          <span>Estimated risk · Demo data</span>
+        </footer>
+      </main>
+    </div>
   );
 }
+
+export default App;
