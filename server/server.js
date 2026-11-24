@@ -12,6 +12,8 @@ const healthRoutes = require("./routes/healthRoutes");
 const historyRoutes = require("./routes/historyRoutes");
 const { createRegionRoutes } = require("./routes/regionRoutes");
 const { regionRegistry } = require("./data/ingest/regionRegistry");
+const reportRoutes = require("./routes/reportRoutes");
+const adminReportRoutes = require("./routes/adminReportRoutes");
 
 const app = express();
 const port = process.env.PORT || 5001;
@@ -26,6 +28,8 @@ app.use("/api/routes", routeRoutes);
 app.use("/api/health", healthRoutes);
 app.use("/api/history", historyRoutes);
 app.use("/api/regions", createRegionRoutes(regionRegistry));
+app.use("/api/reports", reportRoutes);
+app.use("/api/admin/reports", adminReportRoutes);
 
 async function connectToMongo() {
   const uri = process.env.MONGODB_URI;

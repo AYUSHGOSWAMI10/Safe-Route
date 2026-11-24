@@ -4,6 +4,7 @@ import MapPanel from "./MapPanel";
 import LocationSearch from "./components/LocationSearch";
 import RouteHistory from "./components/RouteHistory";
 import SafetyReports from "./components/SafetyReports";
+import AdminReports from "./components/AdminReports";
 
 import {
   signup,
@@ -12,53 +13,11 @@ import {
   getMe,
 } from "./services/auth.js";
 
+import { findWalkingRouteByCoordinates } from "./services/routes.js";
+
 import "./style.css";
 
 const TOKEN_KEY = "saferoute_token";
-
-// Demo route data
-const routes = [
-  {
-    id: "fast",
-    name: "Fastest",
-    time: "12 min",
-    distance: "1.8 km",
-    risk: 72,
-    color: "#dc5555",
-    highRisk: "35%",
-    description: "Shortest travel time, but higher estimated risk.",
-  },
-  {
-    id: "balanced",
-    name: "Balanced",
-    time: "15 min",
-    distance: "2.1 km",
-    risk: 48,
-    color: "#d99b35",
-    highRisk: "18%",
-    description: "Balances travel time and estimated risk.",
-  },
-  {
-    id: "safe",
-    name: "Safer",
-    time: "19 min",
-    distance: "2.5 km",
-    risk: 25,
-    color: "#269b69",
-    highRisk: "5%",
-    description: "Lower estimated risk, with additional travel time.",
-  },
-];
-
-// Illustrative safety factors
-const factors = [
-  { name: "Street Lighting", value: 35 },
-  { name: "Human Activity", value: 70 },
-  { name: "Incident History", value: 25 },
-  { name: "Pedestrian Infrastructure", value: 80 },
-  { name: "Road Condition", value: 60 },
-  { name: "Road Isolation", value: 30 },
-];
 
 export default function App() {
   // =================================
@@ -88,6 +47,10 @@ export default function App() {
 
   const [slider, setSlider] = useState(50);
   const [selectedRoute, setSelectedRoute] = useState("balanced");
+
+  const [routes, setRoutes] = useState([]);
+  const [routeLoading, setRouteLoading] = useState(false);
+  const [routeError, setRouteError] = useState("");
 
   const [showResults, setShowResults] = useState(false);
 
@@ -321,7 +284,7 @@ export default function App() {
   // FIND ROUTES
   // =================================
 
-  function handleFindRoutes() {
+  async function handleFindRoutes() {
     if (!source || !destination) {
       alert(
         "Please select both locations using search suggestions or the map."
@@ -341,13 +304,146 @@ export default function App() {
       return;
     }
 
-    setShowResults(true);
+    setRouteError("");
+    setRouteLoading(true);
+    setShowResults(false);
+
+    try {
+      const sliderValue = slider / 100; // 0 .. 1
+
+      const preferences = [
+        { id: "faster", label: "Fastest", preference: "faster", slider: 0 },
+        { id: "balanced", label: "Balanced", preference: "balanced", slider: 0.5 },
+        { id: "safer", label: "Safer", preference: "safer", slider: 1.0 },
+      ];
+
+      // Include a custom slider route only when the slider is not exactly
+      // one of the fixed preference points.
+      const isCustom =
+        sliderValue !== 0 && sliderValue !== 0.5 && sliderValue !== 1;
+
+      if (isCustom) {
+        preferences.push({
+          id: "custom",
+          label: `Custom (${Math.round(sliderValue * 100)}%)`,
+          preference: "custom",
+          slider: sliderValue,
+        });
+      }
+
+      const results = await Promise.all(
+        preferences.map(async (pref) => {
+          try {
+            const data = await findWalkingRouteByCoordinates({
+              source,
+              destination,
+              preference: pref.preference,
+              slider: pref.slider,
+            });
+            return { ...pref, data };
+          } catch (err) {
+            return { ...pref, error: err };
+          }
+        })
+      );
+
+      const calculatedRoutes = results
+        .map((result) => {
+          if (result.error) {
+            return null;
+          }
+
+          const { data } = result;
+          const distanceKm = Number(
+            (data.route.distanceM / 1000).toFixed(2)
+          );
+          const timeMin =
+            data.route.estimatedTimeMin ??
+            Math.max(1, Math.round((data.route.distanceM / 1000) / 5) * 60);
+
+          return {
+            id: result.id,
+            name: result.label,
+            preference: result.preference,
+            slider: result.slider,
+            distance: `${distanceKm} km`,
+            distanceKm,
+            time: `${timeMin} min`,
+            estimatedTimeMin: timeMin,
+            // Real geometry returned by the backend ([lat, lng] nodes).
+            geometry: data.route.coordinates,
+            // Only present when the backend actually provides it.
+            safetyScore: data.route.safetyScore ?? null,
+          };
+        })
+        .filter(Boolean);
+
+      if (calculatedRoutes.length === 0) {
+        setRouteError("No routes could be calculated for these locations.");
+        setRoutes([]);
+      } else {
+        setRoutes(calculatedRoutes);
+        const defaultRoute =
+          calculatedRoutes.find((r) => r.preference === "balanced") ??
+          calculatedRoutes[0];
+        setSelectedRoute(defaultRoute.id);
+        setShowResults(true);
+      }
+    } catch (err) {
+      setRouteError(err.message || "Could not calculate routes. Try again.");
+      setRoutes([]);
+    } finally {
+      setRouteLoading(false);
+
+      // Save calculated route to history for non-demo users
+      if (!user?.id?.startsWith("demo")) {
+        setRouteLoading(true);
+        try {
+          const activeRoute = routes.find((r) => r.id === selectedRoute);
+          if (activeRoute) {
+            const prefMap = { faster: "faster", balanced: "balanced", safer: "safer" };
+            const preference = prefMap[activeRoute.preference] || "balanced";
+            const distanceNum = activeRoute.distanceKm !== undefined ? activeRoute.distanceKm : 0;
+            const estimatedTimeNum = activeRoute.estimatedTimeMin !== undefined ? activeRoute.estimatedTimeMin : 0;
+            const body = {
+              source: sourceName || "",
+              destination: destinationName || "",
+              preference,
+              selectedRoute: activeRoute.name,
+              distance: distanceNum,
+              estimatedTime: estimatedTimeNum,
+              safetyScore: activeRoute.safetyScore !== null ? activeRoute.safetyScore : 0,
+            };
+            await fetch("/api/history", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+              body: JSON.stringify(body),
+            });
+          }
+        } catch (e) {
+          // Silently fail - history save is best-effort
+        } finally {
+          setRouteLoading(false);
+        }
+      }
+    }
+  }
+
+  function handleMapReselectOrigin(point) {
+    setSource(point);
+    setSourceName(
+      `Map location (${point.lat.toFixed(4)}, ${point.lng.toFixed(4)})`
+    );
+    setDestination(null);
+    setDestinationName("");
+    setShowResults(false);
+    setRoutes([]);
+    setRouteError("");
+    setSelectedRoute("balanced");
   }
 
   // Currently selected route
-  const activeRoute = routes.find(
-    (route) => route.id === selectedRoute
-  );
+  const activeRoute = routes.find((route) => route.id === selectedRoute);
 
   // =================================
   // AUTHENTICATION LOADING
@@ -787,7 +883,20 @@ export default function App() {
       </header>
 
       <main className="dashboard">
-        {activeView === "history" ? (
+        {activeView === "reports" ? (
+          user.role === "admin" ? (
+            <AdminReports
+              token={token}
+              onBack={() => setActiveView("planner")}
+            />
+          ) : (
+            <SafetyReports
+              token={token}
+              user={user}
+              onBack={() => setActiveView("planner")}
+            />
+          )
+        ) : activeView === "history" ? (
           <RouteHistory
             token={token}
             isDemo={user?.id === "demo-user"}
@@ -1111,55 +1220,208 @@ export default function App() {
 
               </div>
 
-              {factors.map((factor) => (
+              {activeRoute && activeRoute.geometry && activeRoute.geometry.length > 0 && (
 
-                <div
-                  className="factor"
-                  key={factor.name}
-                >
+                <div className="factor-grid">
 
-                  <div className="factor-heading">
+                  {activeRoute.riskBreakdown && Object.keys(activeRoute.riskBreakdown).length > 0 && (
 
-                    <span>{factor.name}</span>
+                    <div className="factor">
 
-                    <strong>
-                      {factor.value}/100
-                    </strong>
+                      <div className="factor-heading">
 
-                  </div>
+                        <span>Risk factors</span>
 
-                  <div className="factor-track">
+                      </div>
 
-                    <div
-                      style={{
-                        width: `${factor.value}%`,
-                        background:
-                          factor.value >= 70
-                            ? "#d99b35"
-                            : factor.value >= 40
-                            ? "#5289c7"
-                            : "#269b69",
-                      }}
-                    />
+                      <div className="factor-track">
 
-                  </div>
+                        {Object.entries(activeRoute.riskBreakdown).map(([key, value]) => {
+
+                          const factorNames = {
+
+                            lighting: "Street Lighting",
+
+                            activity: "Human Activity",
+
+                            pedestrian: "Pedestrian Infrastructure",
+
+                            isolation: "Road Isolation",
+
+                            roadCondition: "Road Condition",
+
+                            incident: "Incident History",
+
+                          };
+
+                          const factorLabel = factorNames[key] || key;
+
+                          const factorValue = Number(value.toFixed(3));
+
+                          return (
+
+                            <div key={key} className="factor">
+
+                              <div className="factor-heading">
+
+                                <span>{factorLabel}</span>
+
+                                <strong>{factorValue}</strong>
+
+                              </div>
+
+                              <div className="factor-track">
+
+                                <div
+
+                                  style={{
+
+                                    width: `${factorValue * 100}%`,
+
+                                    background:
+
+                                      factorValue >= 0.7
+
+                                        ? "#d99b35"
+
+                                        : factorValue >= 0.4
+
+                                        ? "#5289c7"
+
+                                        : "#269b69",
+
+                                  }}
+
+                                />
+
+                              </div>
+
+                            </div>
+
+                          );
+
+                        })}
+
+                      </div>
+
+                    </div>
+
+                  )}
+
+                  {activeRoute.explanations && activeRoute.explanations.length > 0 && (
+
+                    <div className="factor">
+
+                      <div className="factor-heading">
+
+                        <span>Route explanation</span>
+
+                      </div>
+
+                      <p>{activeRoute.explanations[0]}</p>
+
+                      {activeRoute.explanations.length > 1 && (
+
+                        <p>{activeRoute.explanations[1]}</p>
+
+                      )}
+
+                    </div>
+
+                  )}
+
+                  {activeRoute.warnings && activeRoute.warnings.length > 0 && (
+
+                    <div className="factor">
+
+                      <div className="factor-heading">
+
+                        <span>Warnings</span>
+
+                      </div>
+
+                      <ul>
+
+                        {activeRoute.warnings.map((warning, i) => (
+
+                          <li key={i}>{warning}</li>
+
+                        ))}
+
+                      </ul>
+
+                    </div>
+
+                  )}
+
+                  {activeRoute.dataConfidence && (
+
+                    <div className="factor">
+
+                      <div className="factor-heading">
+
+                        <span>Data confidence</span>
+
+                      </div>
+
+                      <p>
+
+                        <strong>Level:</strong> {activeRoute.dataConfidence.level || "Low"}
+
+                      </p>
+
+                      <p>
+
+                        <strong>Osm share:</strong> {activeRoute.dataConfidence.split?.osm != null ? `${activeRoute.dataConfidence.split.osm}%` : "—"}
+
+                      </p>
+
+                      <p>
+
+                        <strong>Estimated share:</strong> {activeRoute.dataConfidence.split?.estimated != null ? `${activeRoute.dataConfidence.split.estimated}%` : "—"}
+
+                      </p>
+
+                      <p>
+
+                        <strong>Simulated share:</strong> {activeRoute.dataConfidence.split?.simulated != null ? `${activeRoute.dataConfidence.split.simulated}%` : "—"}
+
+                      </p>
+
+                      <p>
+
+                        <strong>Report share:</strong> {activeRoute.dataConfidence.split?.report != null ? `${activeRoute.dataConfidence.split.report}%` : "—"}
+
+                      </p>
+
+                    </div>
+
+                  )}
 
                 </div>
 
-              ))}
+              ) : (
 
-              <div className="explanation">
+                <p className="empty-state">
 
-                <strong>Understanding the scores</strong>
+                  No route data available. Select locations and calculate routes.
 
-                <p>
-                  Each factor contributes to the estimated
-                  road-risk score. Higher factor values
-                  indicate a greater concern in this
-                  illustrative demo.
                 </p>
 
-              </div>
+              ) : (
+
+
+              )}
+
+              {activeRoute && activeRoute.safetyScore !== null && (
+
+                <div className="safety-score-badge">
+
+                  <strong>Safety score:</strong> {activeRoute.safetyScore}/100
+
+                </div>
+
+              )}
 
             </div>
 

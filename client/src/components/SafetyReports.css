@@ -20,3 +20,213 @@
 .safety-report-draft-location,.safety-report-draft small{color:var(--muted,#64748b);font-size:13px}
 .safety-report-emergency{margin-top:18px;color:var(--muted,#64748b);font-size:12px;line-height:1.5}
 @media(max-width:650px){.safety-reports-page{padding-top:18px}.safety-reports-header{align-items:flex-start;flex-direction:column}.safety-reports-notice,.safety-report-form,.safety-report-drafts{padding:16px}}
+
+/* ================================
+   SAFETY REPORTS - API STATES
+   ================================ */
+
+.safety-report-message.safety-report-error {
+  color: var(--red, #dc5555);
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  padding: 12px;
+  margin-top: 12px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.safety-report-message.safety-report-success {
+  color: #166534;
+  background: #f0fdf4;
+  border: 1px solid #86efac;
+  border-radius: 8px;
+  padding: 12px;
+  margin-top: 12px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.safety-report-form button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.safety-report-list {
+  margin-top: 22px;
+}
+
+.safety-report-list-items {
+  display: grid;
+  gap: 12px;
+}
+
+.safety-report-item {
+  padding: 16px;
+  border: 1px solid var(--border, #dce3ed);
+  border-radius: 10px;
+  background: var(--surface, #fff);
+}
+
+.safety-report-item-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+
+.safety-report-item-location {
+  color: var(--muted, #64748b);
+  font-size: 13px;
+  margin: 8px 0;
+}
+
+.safety-report-moderation {
+  margin-top: 10px;
+  padding: 10px;
+  border-radius: 8px;
+  background: #fffaf0;
+  border: 1px solid #fde68a;
+  font-size: 13px;
+  color: #66532f;
+}
+
+.safety-report-status {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: 20px;
+}
+
+.safety-report-status-pending {
+  background: #e4eef8;
+  color: #1d4ed8;
+}
+
+.safety-report-status-approved {
+  background: #f0fdf4;
+  color: #166534;
+}
+
+.safety-report-status-rejected {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+/* ================================
+   ADMIN MODERATION
+   ================================ */
+
+.admin-reports {
+  margin-top: 22px;
+}
+
+.admin-report-list {
+  display: grid;
+  gap: 12px;
+}
+
+.admin-report-row {
+  padding: 16px;
+  border: 1px solid var(--border, #dce3ed);
+  border-radius: 10px;
+  background: var(--surface, #fff);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.admin-report-info {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.admin-report-location {
+  color: var(--muted, #64748b);
+  font-size: 13px;
+  margin: 0;
+}
+
+.admin-report-meta {
+  color: var(--muted, #64748b);
+  font-size: 12px;
+  margin: 0;
+}
+
+.admin-report-note {
+  margin: 0;
+  font-size: 13px;
+}
+
+.admin-report-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-top: 4px;
+}
+
+.admin-status-select {
+  padding: 8px 10px;
+  border: 1px solid var(--border, #dce3ed);
+  border-radius: 8px;
+  background: white;
+  color: var(--text, #172b4d);
+  font: inherit;
+  font-size: 13px;
+  min-width: 150px;
+}
+
+.admin-note {
+  padding: 8px 10px;
+  border: 1px solid var(--border, #dce3ed);
+  border-radius: 8px;
+  background: white;
+  color: var(--text, #172b4d);
+  font: inherit;
+  font-size: 13px;
+  min-width: 220px;
+  resize: vertical;
+}
+
+.admin-apply {
+  border: 0;
+  border-radius: 8px;
+  padding: 9px 16px;
+  background: var(--primary, #2563eb);
+  color: white;
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.admin-apply:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+@media (max-width: 650px) {
+  .safety-reports-notice,
+  .safety-report-form,
+  .safety-report-list,
+  .admin-reports {
+    padding: 16px;
+  }
+
+  .admin-report-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .admin-status-select,
+  .admin-note,
+  .admin-apply {
+    width: 100%;
+    min-width: 0;
+  }
+}

@@ -91,10 +91,27 @@ function selectConnectedPair(starts, ends, components) {
 }
 
 function findWalkingRouteByCoordinates(req, res) {
-  const { source, destination, preference = "faster", regionCode } = req.body || {};
+  const { source, destination, preference = "faster", slider, regionCode } = req.body || {};
   if (!validCoordinate(source) || !validCoordinate(destination)) {
     return res.status(400).json({ error: "source and destination must contain valid numeric lat and lng coordinates." });
   }
+
+  let customSlider = null;
+  if (slider !== undefined && slider !== null && slider !== "") {
+    const s = Number(slider);
+    if (!Number.isFinite(s) || s < 0 || s > 1) {
+      return res.status(400).json({ error: "Slider value must be a number between 0 and 1." });
+    }
+    customSlider = s;
+  }
+
+  // Named preferences map to fixed slider points (0 = faster, 0.5 = balanced,
+  // 1 = safer). Any other slider value is a custom blend passed to the router.
+  let routeMode = preference;
+  if (customSlider !== null && customSlider !== 0 && customSlider !== 0.5 && customSlider !== 1) {
+    routeMode = { slider: customSlider };
+  }
+
   if (!validModes.has(preference)) {
     return res.status(400).json({ error: "preference must be faster, balanced, or safer." });
   }
@@ -161,7 +178,7 @@ function findWalkingRouteByCoordinates(req, res) {
       return res.status(422).json({ error: "No distinct connected walking nodes found within snapping range.", maxSnapDistanceM: MAX_SNAP_M });
     }
     const { start, end } = pair;
-    const result = findRoute(adjacency, start.id, end.id, preference);
+    const result = findRoute(adjacency, start.id, end.id, routeMode);
     if (!result || !result.found || result.status === "NO_ROUTE") {
       return res.status(404).json({ error: "No connected walking route found between the snapped nodes.", code: "NO_ROUTE" });
     }
@@ -177,7 +194,7 @@ function findWalkingRouteByCoordinates(req, res) {
       trafficExposureDistanceM[exposure] = (trafficExposureDistanceM[exposure] || 0) + edge.lengthM;
     }
     return res.json({
-      source, destination, preference,
+      source, destination, preference, slider: customSlider,
       snapped: {
         source: { nodeId: start.id, coordinate: graph.nodes[start.id], distanceM: Number(start.distanceM.toFixed(2)) },
         destination: { nodeId: end.id, coordinate: graph.nodes[end.id], distanceM: Number(end.distanceM.toFixed(2)) }
@@ -186,6 +203,7 @@ function findWalkingRouteByCoordinates(req, res) {
         nodeIds: result.nodes,
         coordinates: result.nodes.map(id => graph.nodes[id]),
         distanceM: Number(distanceM.toFixed(2)),
+        estimatedTimeMin: distanceM > 0 ? Math.max(1, Math.round(distanceM / 83.33)) : 0,
         weightedCost: Number(result.weightedCost.toFixed(2)),
         trafficExposureDistanceM
       },
