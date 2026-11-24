@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import MapPanel from "./MapPanel";
 import LocationSearch from "./components/LocationSearch";
 import RouteHistory from "./components/RouteHistory";
+import SafetyReports from "./components/SafetyReports";
 
 import {
   signup,
@@ -752,6 +753,14 @@ export default function App() {
             aria-current={activeView === "history" ? "page" : undefined}
           >
             History
+          </button>
+                  <button
+            type="button"
+            className={`history-nav-button ${activeView === "reports" ? "active" : ""}`}
+            onClick={() => setActiveView("reports")}
+            aria-current={activeView === "reports" ? "page" : undefined}
+          >
+            Safety Reports
           </button>
         </nav>
 

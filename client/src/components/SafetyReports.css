@@ -1,0 +1,22 @@
+.safety-reports-page{width:min(1100px,100%);margin:0 auto;padding:28px 0 40px;color:var(--text,#172b4d)}
+.safety-reports-header,.safety-report-drafts-heading,.safety-report-draft-top{display:flex;align-items:center;justify-content:space-between;gap:16px}
+.safety-reports-eyebrow{margin:0 0 8px;color:var(--primary,#2563eb);font-size:11px;font-weight:800;letter-spacing:.12em}
+.safety-reports-header h1{margin:0;font-size:clamp(25px,4vw,34px)}
+.safety-reports-header p:not(.safety-reports-eyebrow){color:var(--muted,#64748b)}
+.safety-reports-back,.safety-report-submit{border:0;border-radius:9px;padding:11px 16px;background:var(--primary,#2563eb);color:white;font-weight:700;cursor:pointer}
+.safety-reports-notice,.safety-report-form,.safety-report-drafts{margin-top:22px;padding:22px;border:1px solid var(--border,#dce3ed);border-radius:14px;background:var(--surface,#fff)}
+.safety-reports-notice{border-left:4px solid #d99b35;background:#fffaf0}
+.safety-reports-notice p{margin:6px 0 0;color:#66532f;line-height:1.55}
+.safety-report-form h2,.safety-report-drafts h2{margin:0 0 18px;font-size:19px}
+.safety-report-form label{display:block;margin:15px 0;font-size:13px;font-weight:700}
+.safety-report-form input,.safety-report-form select,.safety-report-form textarea{display:block;width:100%;margin-top:8px;padding:12px;border:1px solid var(--border,#dce3ed);border-radius:8px;background:white;color:inherit;font:inherit;font-weight:400;box-sizing:border-box}
+.safety-report-form textarea{resize:vertical}
+.safety-report-privacy,.safety-report-message,.safety-report-empty{color:var(--muted,#64748b);font-size:13px;line-height:1.5}
+.safety-report-drafts-heading span{min-width:28px;padding:4px 8px;border-radius:20px;background:#eff4ff;color:#2458a6;text-align:center;font-size:12px;font-weight:700}
+.safety-report-draft-list{display:grid;gap:12px}
+.safety-report-draft{padding:16px;border:1px solid var(--border,#dce3ed);border-radius:10px}
+.safety-report-draft-top button{border:0;background:transparent;color:#b42318;font-weight:700;cursor:pointer}
+.safety-report-draft p{margin:8px 0;line-height:1.5}
+.safety-report-draft-location,.safety-report-draft small{color:var(--muted,#64748b);font-size:13px}
+.safety-report-emergency{margin-top:18px;color:var(--muted,#64748b);font-size:12px;line-height:1.5}
+@media(max-width:650px){.safety-reports-page{padding-top:18px}.safety-reports-header{align-items:flex-start;flex-direction:column}.safety-reports-notice,.safety-report-form,.safety-report-drafts{padding:16px}}
