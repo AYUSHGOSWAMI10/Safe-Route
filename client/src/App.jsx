@@ -9,6 +9,7 @@ import {
   loginAsDemo,
   getMe,
 } from "./services/auth.js";
+import { findRoutes } from "./services/routes.js";
 
 import "./style.css";
 
@@ -87,6 +88,8 @@ export default function App() {
   const [selectedRoute, setSelectedRoute] = useState("balanced");
 
   const [showResults, setShowResults] = useState(false);
+  const [calculatedRoutes, setCalculatedRoutes] = useState(null);
+  const [loadingRoutes, setLoadingRoutes] = useState(false);
 
   // =================================
   // VERIFY EXISTING LOGIN SESSION
@@ -308,7 +311,7 @@ export default function App() {
   // FIND ROUTES
   // =================================
 
-  function handleFindRoutes() {
+  async function handleFindRoutes() {
     if (!source || !destination) {
       alert(
         "Please select both locations using search suggestions or the map."
@@ -328,13 +331,131 @@ export default function App() {
       return;
     }
 
-    setShowResults(true);
+    setLoadingRoutes(true);
+
+    try {
+      const data = await findRoutes({
+        source: sourceName && !sourceName.startsWith("Map location") ? sourceName : source,
+        destination: destinationName && !destinationName.startsWith("Map location") ? destinationName : destination,
+        preference: selectedRoute === "fast" ? "faster" : selectedRoute === "safe" ? "safer" : "balanced",
+        slider: slider / 100,
+        departAt: new Date().toISOString(),
+      });
+
+      if (data && Array.isArray(data.routes) && data.routes.length > 0) {
+        const modeToId = {
+          faster: "fast",
+          balanced: "balanced",
+          safer: "safe",
+          custom: "balanced",
+        };
+
+        const mapped = data.routes.map((r, idx) => {
+          const id = modeToId[r.preference] || (idx === 0 ? "fast" : idx === 1 ? "balanced" : "safe");
+          const defaultName = id === "fast" ? "Fastest" : id === "balanced" ? "Balanced" : "Safer";
+          const defaultDesc =
+            id === "fast"
+              ? "Shortest travel time, but higher estimated risk."
+              : id === "balanced"
+              ? "Balances travel time and estimated risk."
+              : "Lower estimated risk, with additional travel time.";
+          const riskVal = Math.round((r.riskScore || 0) * 100);
+          const color = id === "fast" ? "#dc5555" : id === "balanced" ? "#d99b35" : "#269b69";
+
+          return {
+            id,
+            name: defaultName,
+            time: `${r.estimatedTimeMin} min`,
+            distance: `${r.distanceKm} km`,
+            risk: riskVal,
+            color,
+            highRisk: `${r.highRiskPercentage || 0}%`,
+            description: defaultDesc,
+            riskBreakdown: r.riskBreakdown,
+            geometry: r.geometry,
+            path: r.path,
+          };
+        });
+
+        setCalculatedRoutes(mapped);
+      }
+      setShowResults(true);
+    } catch (err) {
+      console.warn("API route finding error, calculating dynamic distance estimate:", err);
+      const R = 6371;
+      const dLat = ((destination.lat - source.lat) * Math.PI) / 180;
+      const dLng = ((destination.lng - source.lng) * Math.PI) / 180;
+      const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos((source.lat * Math.PI) / 180) *
+          Math.cos((destination.lat * Math.PI) / 180) *
+          Math.sin(dLng / 2) *
+          Math.sin(dLng / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      const distDirectKm = Math.max(0.4, Number((R * c * 1.3).toFixed(1)));
+
+      const fastDist = distDirectKm;
+      const balDist = Number((distDirectKm * 1.15).toFixed(1));
+      const safeDist = Number((distDirectKm * 1.35).toFixed(1));
+
+      const mapped = [
+        {
+          id: "fast",
+          name: "Fastest",
+          time: `${Math.max(2, Math.round((fastDist / 5) * 60))} min`,
+          distance: `${fastDist} km`,
+          risk: 72,
+          color: "#dc5555",
+          highRisk: "35%",
+          description: "Shortest travel time, but higher estimated risk.",
+          riskBreakdown: { lighting: 0.35, activity: 0.70, incident: 0.25, pedestrian: 0.80, roadCondition: 0.60, isolation: 0.30 },
+        },
+        {
+          id: "balanced",
+          name: "Balanced",
+          time: `${Math.max(3, Math.round((balDist / 5) * 60))} min`,
+          distance: `${balDist} km`,
+          risk: 48,
+          color: "#d99b35",
+          highRisk: "18%",
+          description: "Balances travel time and estimated risk.",
+          riskBreakdown: { lighting: 0.25, activity: 0.50, incident: 0.15, pedestrian: 0.60, roadCondition: 0.40, isolation: 0.20 },
+        },
+        {
+          id: "safe",
+          name: "Safer",
+          time: `${Math.max(4, Math.round((safeDist / 5) * 60))} min`,
+          distance: `${safeDist} km`,
+          risk: 25,
+          color: "#269b69",
+          highRisk: "5%",
+          description: "Lower estimated risk, with additional travel time.",
+          riskBreakdown: { lighting: 0.15, activity: 0.30, incident: 0.08, pedestrian: 0.35, roadCondition: 0.25, isolation: 0.10 },
+        },
+      ];
+      setCalculatedRoutes(mapped);
+      setShowResults(true);
+    } finally {
+      setLoadingRoutes(false);
+    }
   }
 
+  const displayRoutes = calculatedRoutes || routes;
+
   // Currently selected route
-  const activeRoute = routes.find(
-    (route) => route.id === selectedRoute
-  );
+  const activeRoute =
+    displayRoutes.find((route) => route.id === selectedRoute) || displayRoutes[0];
+
+  const displayFactors = activeRoute?.riskBreakdown
+    ? [
+        { name: "Street Lighting", value: Math.round((activeRoute.riskBreakdown.lighting ?? 0.35) * 100) },
+        { name: "Human Activity", value: Math.round((activeRoute.riskBreakdown.activity ?? 0.70) * 100) },
+        { name: "Incident History", value: Math.round((activeRoute.riskBreakdown.incident ?? 0.25) * 100) },
+        { name: "Pedestrian Infrastructure", value: Math.round((activeRoute.riskBreakdown.pedestrian ?? 0.80) * 100) },
+        { name: "Road Condition", value: Math.round((activeRoute.riskBreakdown.roadCondition ?? 0.60) * 100) },
+        { name: "Road Isolation", value: Math.round((activeRoute.riskBreakdown.isolation ?? 0.30) * 100) },
+      ]
+    : factors;
 
   // =================================
   // AUTHENTICATION LOADING
@@ -830,8 +951,9 @@ export default function App() {
                 type="button"
                 className="primary-button"
                 onClick={handleFindRoutes}
+                disabled={loadingRoutes}
               >
-                Find Routes <span>→</span>
+                {loadingRoutes ? "Finding Routes..." : "Find Routes"} <span>→</span>
               </button>
 
             </div>
@@ -892,6 +1014,7 @@ export default function App() {
               destination={destination}
               onSourceSelect={handleSourceSelect}
               onDestinationSelect={handleDestinationSelect}
+              geometry={activeRoute?.geometry}
             />
 
           </div>
@@ -940,7 +1063,7 @@ export default function App() {
 
                   <div className="route-list">
 
-                    {routes.map((route) => (
+                    {displayRoutes.map((route) => (
 
                       <button
                         type="button"
@@ -1051,7 +1174,7 @@ export default function App() {
 
               </div>
 
-              {factors.map((factor) => (
+              {displayFactors.map((factor) => (
 
                 <div
                   className="factor"

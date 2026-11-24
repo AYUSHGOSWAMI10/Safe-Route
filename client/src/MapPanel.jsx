@@ -45,9 +45,12 @@ export default function MapPanel({
   destination,
   onSourceSelect,
   onDestinationSelect,
+  geometry,
 }) {
   const routeLine =
-    source && destination
+    geometry && geometry.length > 0
+      ? geometry.map((g) => [g.lat, g.lng])
+      : source && destination
       ? [
           [source.lat, source.lng],
           [destination.lat, destination.lng],
@@ -105,7 +108,11 @@ export default function MapPanel({
       <div className="map-instructions">
         <span><b className="source-dot" /> Source</span>
         <span><b className="destination-dot" /> Destination</span>
-        <span>Illustrative straight line, not a calculated route</span>
+        <span>
+          {geometry && geometry.length > 0
+            ? "Calculated route path"
+            : "Illustrative straight line, not a calculated route"}
+        </span>
       </div>
     </div>
   );

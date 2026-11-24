@@ -186,7 +186,9 @@ function getRiskBand(risk, config = activeConfig) {
  * @param {object} edge - Graph edge
  * @returns {Record<string, number>}
  */
-function deriveEdgeFactors(edge) {
+function deriveEdgeFactors(edge, options = {}) {
+  const period = options.period || "day";
+
   if (edge?.factors && typeof edge.factors === "object") {
     const hasAll = FACTORS.every((f) => typeof edge.factors[f] === "number");
     if (hasAll) {
@@ -198,8 +200,43 @@ function deriveEdgeFactors(edge) {
     }
   }
 
-  // If edge has a direct safetyScore (e.g. sample roads), all 6 factors reflect that score
-  if (typeof edge?.safetyScore === "number") {
+  const road = edge?.road || {};
+  const safety = edge?.safety || {};
+
+  const hasRoadMeta = Boolean(
+    road.highway ||
+      road.lit ||
+      road.surface ||
+      road.sidewalk ||
+      safety.lighting ||
+      safety.surface ||
+      safety.sidewalk ||
+      typeof safety.incidentRisk === "number" ||
+      typeof safety.trafficExposure === "number"
+  );
+
+  // When road has calibrated biases (e.g. place graph), calculate distinct dynamic factors
+  if (typeof edge?.safetyScore === "number" && edge?.biases) {
+    const baseRisk = Math.max(0, Math.min(1, (100 - edge.safetyScore) / 100));
+    const pMod =
+      period === "night"
+        ? { lit: 1.55, act: 1.35, iso: 1.45, inc: 1.20, ped: 1.0, rc: 1.0 }
+        : period === "evening"
+        ? { lit: 1.20, act: 1.15, iso: 1.20, inc: 1.10, ped: 1.0, rc: 1.0 }
+        : { lit: 0.85, act: 0.90, iso: 0.90, inc: 0.95, ped: 1.0, rc: 1.0 };
+    const b = edge.biases;
+    return {
+      lighting: Math.max(0, Math.min(1, Number((baseRisk * (b.litBias || 1.0) * pMod.lit).toFixed(4)))),
+      activity: Math.max(0, Math.min(1, Number((baseRisk * (b.actBias || 1.0) * pMod.act).toFixed(4)))),
+      pedestrian: Math.max(0, Math.min(1, Number((baseRisk * (b.pedBias || 1.0) * pMod.ped).toFixed(4)))),
+      isolation: Math.max(0, Math.min(1, Number((baseRisk * (b.isoBias || 1.0) * pMod.iso).toFixed(4)))),
+      roadCondition: Math.max(0, Math.min(1, Number((baseRisk * (b.rcBias || 1.0) * pMod.rc).toFixed(4)))),
+      incident: Math.max(0, Math.min(1, Number((baseRisk * (b.incBias || 1.0) * pMod.inc).toFixed(4)))),
+    };
+  }
+
+  // Fallback for simple synthetic mock edges that only supply safetyScore
+  if (!hasRoadMeta && typeof edge?.safetyScore === "number") {
     const baseRisk = Math.max(0, Math.min(1, (100 - edge.safetyScore) / 100));
     return {
       lighting: baseRisk,
@@ -211,54 +248,85 @@ function deriveEdgeFactors(edge) {
     };
   }
 
-  const road = edge?.road || {};
-  const safety = edge?.safety || {};
-
   // 1. lighting (0 = well-lit, 1 = unlit)
-  let lighting = 0.5;
+  let lighting = 0.2;
   const lit = (road.lit || safety.lighting || "").toLowerCase();
-  if (lit === "yes" || lit === "24/7") lighting = 0.0;
-  else if (lit === "no") lighting = 1.0;
-  else if (lit === "disused") lighting = 0.8;
+  if (lit === "yes" || lit === "24/7") {
+    lighting = period === "night" ? 0.22 : period === "evening" ? 0.12 : 0.05;
+  } else if (lit === "limited" || lit === "disused") {
+    lighting = period === "night" ? 0.65 : period === "evening" ? 0.40 : 0.12;
+  } else if (lit === "no") {
+    lighting = period === "night" ? 0.90 : period === "evening" ? 0.60 : 0.18;
+  } else {
+    lighting = period === "night" ? 0.60 : period === "evening" ? 0.35 : 0.12;
+  }
 
   // 2. activity (0 = busy/high pedestrian activity, 1 = deserted)
-  let activity = 0.5;
+  let activity = 0.35;
   const hw = (road.highway || "").toLowerCase();
-  if (["pedestrian", "living_street", "footway"].includes(hw)) activity = 0.2;
-  else if (["residential", "service"].includes(hw)) activity = 0.4;
-  else if (["tertiary", "secondary"].includes(hw)) activity = 0.6;
-  else if (["track", "path"].includes(hw)) activity = 0.8;
+  if (["pedestrian", "living_street", "market"].includes(hw)) {
+    activity = period === "night" ? 0.45 : period === "evening" ? 0.20 : 0.08;
+  } else if (["residential", "service"].includes(hw)) {
+    activity = period === "night" ? 0.60 : period === "evening" ? 0.38 : 0.25;
+  } else if (["tertiary", "secondary"].includes(hw)) {
+    activity = period === "night" ? 0.65 : period === "evening" ? 0.48 : 0.35;
+  } else if (["track", "path", "footway"].includes(hw)) {
+    activity = period === "night" ? 0.80 : period === "evening" ? 0.58 : 0.30;
+  } else {
+    activity = period === "night" ? 0.65 : period === "evening" ? 0.45 : 0.30;
+  }
 
   // 3. pedestrian infrastructure (0 = dedicated pedestrian facility, 1 = high traffic exposure)
-  let pedestrian = 0.5;
+  let pedestrian = 0.3;
   const sidewalk = (road.sidewalk || safety.sidewalk || "").toLowerCase();
-  if (["both", "yes"].includes(sidewalk)) pedestrian = 0.1;
-  else if (["left", "right", "separate"].includes(sidewalk)) pedestrian = 0.3;
-  else if (["no", "none"].includes(sidewalk)) pedestrian = 0.8;
-  else if (["footway", "pedestrian", "path"].includes(hw)) pedestrian = 0.1;
-  else if (typeof safety.trafficExposure === "number") {
-    pedestrian = Math.max(0, Math.min(1, safety.trafficExposure / 5));
+  if (["both", "separate"].includes(sidewalk)) {
+    pedestrian = 0.08;
+  } else if (["yes", "left", "right"].includes(sidewalk)) {
+    pedestrian = 0.20;
+  } else if (["no", "none"].includes(sidewalk)) {
+    pedestrian = 0.75;
+  } else if (["footway", "pedestrian", "living_street"].includes(hw)) {
+    pedestrian = 0.08;
+  } else if (typeof safety.trafficExposure === "number") {
+    pedestrian = Math.max(0, Math.min(1, 0.08 + (safety.trafficExposure / 5) * 0.6));
   }
 
   // 4. isolation (0 = active eyes on street, 1 = isolated area)
-  let isolation = 0.4;
-  if (["track", "path"].includes(hw)) isolation = 0.8;
-  else if (["pedestrian", "living_street"].includes(hw)) isolation = 0.2;
-  else if (["residential"].includes(hw)) isolation = 0.4;
+  let isolation = 0.3;
+  if (["track", "path"].includes(hw)) {
+    isolation = period === "night" ? 0.80 : period === "evening" ? 0.55 : 0.35;
+  } else if (["footway"].includes(hw)) {
+    isolation = period === "night" ? 0.70 : period === "evening" ? 0.45 : 0.22;
+  } else if (["pedestrian", "living_street", "market"].includes(hw)) {
+    isolation = period === "night" ? 0.38 : period === "evening" ? 0.22 : 0.12;
+  } else if (["residential"].includes(hw)) {
+    isolation = period === "night" ? 0.50 : period === "evening" ? 0.35 : 0.22;
+  } else {
+    isolation = period === "night" ? 0.55 : period === "evening" ? 0.40 : 0.25;
+  }
 
   // 5. roadCondition (0 = paved/smooth, 1 = unpaved/rough)
-  let roadCondition = 0.3;
+  let roadCondition = 0.2;
   const surface = (road.surface || safety.surface || "").toLowerCase();
-  if (["asphalt", "paved", "concrete"].includes(surface)) roadCondition = 0.1;
-  else if (["cobblestone", "paving_stones"].includes(surface)) roadCondition = 0.4;
-  else if (["unpaved", "dirt", "gravel", "ground"].includes(surface)) roadCondition = 0.8;
+  if (["asphalt", "paved", "concrete"].includes(surface)) {
+    roadCondition = 0.08;
+  } else if (["cobblestone", "paving_stones"].includes(surface)) {
+    roadCondition = 0.30;
+  } else if (["unpaved", "dirt", "gravel", "ground"].includes(surface)) {
+    roadCondition = 0.80;
+  } else {
+    roadCondition = ["footway", "living_street"].includes(hw) ? 0.12 : 0.22;
+  }
 
   // 6. incident (0 = no known incidents, 1 = verified incident hotspot)
-  let incident = 0.0;
+  let incident = 0.04;
   if (typeof safety.incidentRisk === "number") {
     incident = Math.max(0, Math.min(1, safety.incidentRisk));
   } else if (Array.isArray(edge?.incidents)) {
     incident = Math.min(1, edge.incidents.length * 0.25);
+  }
+  if (period === "night" && incident > 0) {
+    incident = Math.min(1, incident * 1.25);
   }
 
   return {
@@ -280,7 +348,8 @@ function deriveEdgeFactors(edge) {
  * @returns {number} Normalized edge risk R(e)
  */
 function calculateEdgeRisk(edge, config = activeConfig, options = {}) {
-  const factors = deriveEdgeFactors(edge);
+  const period = options.period || "day";
+  const factors = deriveEdgeFactors(edge, { period });
   const weights = config?.weights || DEFAULT_RISK_CONFIG.weights;
 
   let weightedRisk = 0;
@@ -290,7 +359,6 @@ function calculateEdgeRisk(edge, config = activeConfig, options = {}) {
     weightedRisk += (weights[factor] || 0) * clamped;
   }
 
-  const period = options.period || "day";
   const multiplier = config?.timeMultipliers?.[period] ?? 1.0;
   weightedRisk *= multiplier;
 

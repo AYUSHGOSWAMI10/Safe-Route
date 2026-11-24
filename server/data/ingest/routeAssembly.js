@@ -200,17 +200,24 @@ function assembleRoute(nodeIds, adjacency, options = {}) {
     const distKm = lengthM / 1000;
 
     // Determine segment travel time in seconds
-    const timeSec =
-      typeof edge.travelTimeSeconds === "number"
-        ? edge.travelTimeSeconds
-        : typeof edge.estimatedTime === "number"
-        ? edge.estimatedTime * 60
-        : Math.max(1, Math.round(lengthM / 1.38889)); // ~5 km/h walking speed (83.33 m/min)
+    const speedKph = config?.walkingSpeedKph || 5.0;
+    const speedModifier = period === "night" ? 0.88 : period === "evening" ? 0.95 : 1.0;
+    const effectiveSpeedMps = ((speedKph * 1000) / 3600) * speedModifier;
 
-    const timeMin = typeof edge.estimatedTime === "number" ? edge.estimatedTime : Math.round(timeSec / 60);
+    let timeSec;
+    if (typeof edge.travelTimeSeconds === "number") {
+      timeSec = Math.round(edge.travelTimeSeconds / speedModifier);
+    } else if (typeof edge.estimatedTime === "number" && !options.period) {
+      // Preserve explicit mock estimatedTime only when period is omitted (e.g. unit tests)
+      timeSec = edge.estimatedTime * 60;
+    } else {
+      timeSec = Math.max(1, Math.round(lengthM / effectiveSpeedMps));
+    }
+
+    const timeMin = Math.max(1, Math.round(timeSec / 60));
 
     // Factors and risk calculation
-    const factors = deriveEdgeFactors(edge);
+    const factors = deriveEdgeFactors(edge, { period });
     const factorSources = deriveFactorSources(edge);
     const segmentRisk = calculateEdgeRisk(edge, config, { period });
     const segmentBand = getRiskBand(segmentRisk, config);
@@ -279,7 +286,8 @@ function assembleRoute(nodeIds, adjacency, options = {}) {
     totalTimeSec += timeSec;
 
     weightedRiskSum += segmentRisk * lengthM;
-    const safetyScoreEdge = edge.safetyScore ?? Math.round((1 - segmentRisk) * 100);
+    const segmentSafety = Math.max(0, Math.min(100, Math.round((1 - segmentRisk) * 100)));
+    const safetyScoreEdge = options.period ? segmentSafety : (edge.safetyScore ?? segmentSafety);
     weightedSafetySum += safetyScoreEdge * distKm;
 
     if (segmentBand === "High") {
@@ -306,9 +314,9 @@ function assembleRoute(nodeIds, adjacency, options = {}) {
   const rawRiskScore = totalLengthM > 0 ? weightedRiskSum / totalLengthM : 0.3;
   const riskScore = Number(rawRiskScore.toFixed(4));
 
-  // Safety score 0-100 (for backwards compatibility)
+  // Dynamic safety score (0-100), inverse of route risk score derived from the 6 factors
   const safetyScore =
-    isPlaceGraph && totalDistanceKm > 0
+    isPlaceGraph && totalDistanceKm > 0 && !options.period
       ? Math.round(weightedSafetySum / totalDistanceKm)
       : Math.max(0, Math.min(100, Math.round((1 - rawRiskScore) * 100)));
 

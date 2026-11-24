@@ -32,6 +32,116 @@ async function getRoads() {
   return sampleRoads;
 }
 
+const PLACE_ROAD_PROPERTIES = {
+  "Central Park - Market Square": {
+    highway: "living_street",
+    lit: "yes",
+    sidewalk: "both",
+    surface: "paved",
+    incidentRisk: 0.04,
+    trafficExposure: 1,
+    biases: { litBias: 0.8, actBias: 0.7, pedBias: 0.8, isoBias: 0.9, rcBias: 0.8, incBias: 0.6 },
+  },
+  "Central Park - City Library": {
+    highway: "residential",
+    lit: "yes",
+    sidewalk: "both",
+    surface: "asphalt",
+    incidentRisk: 0.08,
+    trafficExposure: 2,
+    biases: { litBias: 1.0, actBias: 1.1, pedBias: 0.9, isoBias: 1.1, rcBias: 0.9, incBias: 0.9 },
+  },
+  "City Library - Market Square": {
+    highway: "tertiary",
+    lit: "yes",
+    sidewalk: "both",
+    surface: "paved",
+    incidentRisk: 0.06,
+    trafficExposure: 2,
+    biases: { litBias: 0.9, actBias: 1.0, pedBias: 0.9, isoBias: 0.9, rcBias: 0.9, incBias: 0.8 },
+  },
+  "City Library - Riverside": {
+    highway: "footway",
+    lit: "disused",
+    sidewalk: "both",
+    surface: "cobblestone",
+    incidentRisk: 0.04,
+    trafficExposure: 0,
+    biases: { litBias: 1.3, actBias: 1.1, pedBias: 0.7, isoBias: 1.2, rcBias: 1.2, incBias: 0.7 },
+  },
+  "Market Square - Riverside": {
+    highway: "pedestrian",
+    lit: "yes",
+    sidewalk: "both",
+    surface: "paving_stones",
+    incidentRisk: 0.04,
+    trafficExposure: 1,
+    biases: { litBias: 0.8, actBias: 0.8, pedBias: 0.8, isoBias: 0.9, rcBias: 0.8, incBias: 0.7 },
+  },
+  "Market Square - University": {
+    highway: "secondary",
+    lit: "yes",
+    sidewalk: "both",
+    surface: "asphalt",
+    incidentRisk: 0.12,
+    trafficExposure: 3,
+    biases: { litBias: 0.9, actBias: 1.2, pedBias: 1.3, isoBias: 0.9, rcBias: 0.9, incBias: 1.1 },
+  },
+  "Riverside - University": {
+    highway: "footway",
+    lit: "yes",
+    sidewalk: "both",
+    surface: "concrete",
+    incidentRisk: 0.02,
+    trafficExposure: 0,
+    biases: { litBias: 0.7, actBias: 0.9, pedBias: 0.6, isoBias: 0.8, rcBias: 0.7, incBias: 0.6 },
+  },
+  "Riverside - Bus Station": {
+    highway: "tertiary",
+    lit: "yes",
+    sidewalk: "right",
+    surface: "asphalt",
+    incidentRisk: 0.14,
+    trafficExposure: 3,
+    biases: { litBias: 1.0, actBias: 1.1, pedBias: 1.1, isoBias: 1.0, rcBias: 0.9, incBias: 1.1 },
+  },
+  "University - Bus Station": {
+    highway: "secondary",
+    lit: "yes",
+    sidewalk: "both",
+    surface: "asphalt",
+    incidentRisk: 0.09,
+    trafficExposure: 3,
+    biases: { litBias: 0.9, actBias: 1.0, pedBias: 1.0, isoBias: 0.9, rcBias: 0.9, incBias: 1.0 },
+  },
+  "City Library - Bus Station": {
+    highway: "tertiary",
+    lit: "no",
+    sidewalk: "none",
+    surface: "unpaved",
+    incidentRisk: 0.28,
+    trafficExposure: 4,
+    biases: { litBias: 1.5, actBias: 1.2, pedBias: 1.4, isoBias: 1.3, rcBias: 1.4, incBias: 1.3 },
+  },
+};
+
+function getPlaceRoadProps(source, destination) {
+  const directKey = `${source} - ${destination}`;
+  const reverseKey = `${destination} - ${source}`;
+  return (
+    PLACE_ROAD_PROPERTIES[directKey] ||
+    PLACE_ROAD_PROPERTIES[reverseKey] || {
+      highway: "residential",
+      lit: "yes",
+      sidewalk: "both",
+      surface: "asphalt",
+      incidentRisk: 0.05,
+      trafficExposure: 2,
+      biases: { litBias: 1.0, actBias: 1.0, pedBias: 1.0, isoBias: 1.0, rcBias: 1.0, incBias: 1.0 },
+    }
+  );
+}
+
 function buildPlaceGraph(roads) {
   const nodes = {};
   for (const road of roads) {
@@ -44,6 +154,9 @@ function buildPlaceGraph(roads) {
   const edges = roads.map((road, idx) => {
     const srcCoord = SAMPLE_PLACE_COORDINATES[road.source] || { lat: 27.5700, lng: 77.6750 };
     const dstCoord = SAMPLE_PLACE_COORDINATES[road.destination] || { lat: 27.5850, lng: 77.6950 };
+    const props = getPlaceRoadProps(road.source, road.destination);
+    const lengthM = (road.distance || 0) * 1000;
+
     return {
       id: `edge_${idx}`,
       from: road.source,
@@ -52,13 +165,22 @@ function buildPlaceGraph(roads) {
         [srcCoord.lng, srcCoord.lat],
         [dstCoord.lng, dstCoord.lat],
       ],
-      lengthM: (road.distance || 0) * 1000,
-      road: { name: `${road.source} - ${road.destination}` },
-      safety: {
-        trafficExposure: Number(
-          Math.max(0, Math.min(5, (1 - (road.safetyScore ?? 50) / 100) * 5)).toFixed(2)
-        ),
+      lengthM,
+      road: {
+        name: `${road.source} - ${road.destination}`,
+        highway: props.highway,
+        lit: props.lit,
+        surface: props.surface,
+        sidewalk: props.sidewalk,
       },
+      safety: {
+        trafficExposure: props.trafficExposure,
+        incidentRisk: props.incidentRisk,
+        lighting: props.lit,
+        surface: props.surface,
+        sidewalk: props.sidewalk,
+      },
+      biases: props.biases,
       distance: road.distance,
       estimatedTime: road.estimatedTime,
       safetyScore: road.safetyScore,
@@ -112,21 +234,89 @@ async function getLocations(req, res) {
   }
 }
 
+function findNearestPlaceName(lat, lng) {
+  let nearest = "Central Park";
+  let minD = Infinity;
+  for (const [name, coord] of Object.entries(SAMPLE_PLACE_COORDINATES)) {
+    const dLat = coord.lat - lat;
+    const dLng = coord.lng - lng;
+    const d = dLat * dLat + dLng * dLng;
+    if (d < minD) {
+      minD = d;
+      nearest = name;
+    }
+  }
+  return nearest;
+}
+
+function resolveLocation(loc) {
+  if (!loc) return null;
+  if (typeof loc === "object" && typeof loc.lat === "number" && typeof loc.lng === "number") {
+    return findNearestPlaceName(loc.lat, loc.lng);
+  }
+  if (typeof loc === "number") return String(loc);
+  if (typeof loc === "string") {
+    const trimmed = loc.trim();
+    if (!trimmed) return null;
+    const match = trimmed.match(/Map location \(\s*([-+]?\d*\.?\d+)\s*,\s*([-+]?\d*\.?\d+)\s*\)/i);
+    if (match) {
+      return findNearestPlaceName(parseFloat(match[1]), parseFloat(match[2]));
+    }
+    if (SAMPLE_PLACE_COORDINATES[trimmed]) {
+      return trimmed;
+    }
+    const lower = trimmed.toLowerCase();
+    for (const name of Object.keys(SAMPLE_PLACE_COORDINATES)) {
+      if (lower.includes(name.toLowerCase()) || name.toLowerCase().includes(lower)) {
+        return name;
+      }
+    }
+    return trimmed;
+  }
+  return null;
+}
+
+function resolveDestination(loc, resolvedSrc, rawSrc) {
+  let resolvedDst = resolveLocation(loc);
+  if (resolvedDst && resolvedDst === resolvedSrc) {
+    // If raw coordinates were provided and snapped to same place, pick second closest
+    if (typeof loc === "object" && typeof loc.lat === "number" && typeof loc.lng === "number") {
+      let secondNearest = null;
+      let minD = Infinity;
+      for (const [name, coord] of Object.entries(SAMPLE_PLACE_COORDINATES)) {
+        if (name === resolvedSrc) continue;
+        const dLat = coord.lat - loc.lat;
+        const dLng = coord.lng - loc.lng;
+        const d = dLat * dLat + dLng * dLng;
+        if (d < minD) {
+          minD = d;
+          secondNearest = name;
+        }
+      }
+      if (secondNearest) return secondNearest;
+    }
+  }
+  return resolvedDst;
+}
+
 async function findRoutes(req, res) {
   const { source, destination, preference = "balanced", slider, departAt } = req.body || {};
 
-  const src =
-    typeof source === "number"
-      ? String(source)
-      : typeof source === "string"
-      ? source.trim()
-      : null;
-  const dst =
-    typeof destination === "number"
-      ? String(destination)
-      : typeof destination === "string"
-      ? destination.trim()
-      : null;
+  const isIdenticalRaw =
+    source === destination ||
+    (typeof source === "object" &&
+      typeof destination === "object" &&
+      source !== null &&
+      destination !== null &&
+      source.lat === destination.lat &&
+      source.lng === destination.lng);
+
+  if (isIdenticalRaw) {
+    return res.status(400).json({ error: "Choose two different locations." });
+  }
+
+  const src = resolveLocation(source);
+  const dst = resolveDestination(destination, src, source);
 
   if (!src || !dst) {
     return res.status(400).json({ error: "Choose a starting point and destination." });
