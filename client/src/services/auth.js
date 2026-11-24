@@ -1,4 +1,23 @@
+
 const API_URL = "/api/auth";
+
+async function parseResponse(response) {
+  const text = await response.text();
+
+  if (!text) {
+    throw new Error(
+      `Server returned an empty response. Status: ${response.status}`
+    );
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(
+      `Server returned invalid JSON. Status: ${response.status}`
+    );
+  }
+}
 
 async function authRequest(endpoint, body) {
   const response = await fetch(`${API_URL}/${endpoint}`, {
@@ -7,7 +26,7 @@ async function authRequest(endpoint, body) {
     body: JSON.stringify(body),
   });
 
-  const data = await response.json();
+  const data = await parseResponse(response);
 
   if (!response.ok) {
     throw new Error(data.message || "Authentication failed.");
@@ -31,7 +50,7 @@ export async function getMe(token) {
     },
   });
 
-  const data = await response.json();
+  const data = await parseResponse(response);
 
   if (!response.ok) {
     throw new Error(data.message || "Session expired. Please log in again.");

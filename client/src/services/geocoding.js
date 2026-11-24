@@ -4,8 +4,8 @@ const NOMINATIM_URL = "https://nominatim.openstreetmap.org/search";
 export async function searchPlaces(query) {
   const trimmedQuery = query.trim();
 
-  if (!trimmedQuery) {
-    throw new Error("Please enter a place name.");
+  if (trimmedQuery.length < 3) {
+    return [];
   }
 
   const params = new URLSearchParams({
@@ -19,7 +19,7 @@ export async function searchPlaces(query) {
   const response = await fetch(`${NOMINATIM_URL}?${params}`);
 
   if (!response.ok) {
-    throw new Error("Could not search for this place. Please try again.");
+    throw new Error("Unable to search for this location.");
   }
 
   const results = await response.json();
