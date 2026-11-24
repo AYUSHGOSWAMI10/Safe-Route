@@ -120,7 +120,26 @@ a {
   transition: color 0.2s;
 }
 
-.top-nav a:hover {
+.top-nav a:hover,
+.top-nav a.active {
+  color: white;
+}
+
+.history-nav-button {
+  border: 1px solid #ffffff45;
+  border-radius: 7px;
+  padding: 8px 12px;
+  background: transparent;
+  color: #d6e1f0;
+  font-size: 13px;
+  font-weight: 600;
+  transition: background .2s, border-color .2s, color .2s;
+}
+
+.history-nav-button:hover,
+.history-nav-button.active {
+  border-color: #93b4f8;
+  background: #ffffff16;
   color: white;
 }
 
@@ -698,7 +717,8 @@ a {
     border-top: 1px solid #ffffff20;
   }
 
-  .top-nav a {
+  .top-nav a,
+  .history-nav-button {
     font-size: 12px;
   }
 
