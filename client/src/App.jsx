@@ -1,15 +1,20 @@
-
 import { useEffect, useState } from "react";
+
 import MapPanel from "./MapPanel";
 import LocationSearch from "./components/LocationSearch";
-import { signup, login, getMe } from "./services/auth";
+
+import {
+  signup,
+  login,
+  loginAsDemo,
+  getMe,
+} from "./services/auth.js";
+
 import "./style.css";
-import RouteCard from "./components/RouteCard.jsx";
-import { findRoutes, getLocations } from "./services/routes.js";
-import { signup, login, loginAsDemo, getMe } from "./services/auth.js";
 
 const TOKEN_KEY = "saferoute_token";
 
+// Demo route data
 const routes = [
   {
     id: "fast",
@@ -43,6 +48,7 @@ const routes = [
   },
 ];
 
+// Illustrative safety factors
 const factors = [
   { name: "Street Lighting", value: 35 },
   { name: "Human Activity", value: 70 },
@@ -53,25 +59,39 @@ const factors = [
 ];
 
 export default function App() {
-  // Authentication state
+  // =================================
+  // AUTHENTICATION STATE
+  // =================================
+
   const [authMode, setAuthMode] = useState("login");
+
   const [token, setToken] = useState(
     () => sessionStorage.getItem(TOKEN_KEY) || ""
   );
+
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [authError, setAuthError] = useState("");
 
-  // Dashboard state
+  // =================================
+  // DASHBOARD STATE
+  // =================================
+
   const [source, setSource] = useState(null);
   const [destination, setDestination] = useState(null);
+
   const [sourceName, setSourceName] = useState("");
   const [destinationName, setDestinationName] = useState("");
+
   const [slider, setSlider] = useState(50);
   const [selectedRoute, setSelectedRoute] = useState("balanced");
+
   const [showResults, setShowResults] = useState(false);
 
-  // Verify an existing login session
+  // =================================
+  // VERIFY EXISTING LOGIN SESSION
+  // =================================
+
   useEffect(() => {
     let active = true;
 
@@ -82,17 +102,22 @@ export default function App() {
 
     getMe(token)
       .then((profile) => {
-        if (active) setUser(profile);
+        if (active) {
+          setUser(profile);
+        }
       })
       .catch(() => {
         sessionStorage.removeItem(TOKEN_KEY);
+
         if (active) {
           setToken("");
           setUser(null);
         }
       })
       .finally(() => {
-        if (active) setAuthLoading(false);
+        if (active) {
+          setAuthLoading(false);
+        }
       });
 
     return () => {
@@ -100,9 +125,13 @@ export default function App() {
     };
   }, [token]);
 
-  // Login / Signup
+  // =================================
+  // LOGIN / SIGNUP
+  // =================================
+
   async function handleAuthSubmit(event) {
     event.preventDefault();
+
     setAuthError("");
     setAuthLoading(true);
 
@@ -116,63 +145,135 @@ export default function App() {
 
       if (authMode === "signup") {
         const name = form.get("name");
-        data = await signup({ name, email, password });
-      } else if (authMode === "demo") {
-        data = await loginAsDemo();
+
+        data = await signup({
+          name,
+          email,
+          password,
+        });
       } else {
-        data = await login({ email, password });
+        data = await login({
+          email,
+          password,
+        });
       }
 
       sessionStorage.setItem(TOKEN_KEY, data.token);
+
       setUser(data.user);
       setToken(data.token);
+
     } catch (error) {
-      setAuthError(error.message || "Authentication failed.");
+      setAuthError(
+        error.message || "Authentication failed."
+      );
     } finally {
       setAuthLoading(false);
     }
   }
 
-  function handleLogout() {
-    sessionStorage.removeItem(TOKEN_KEY);
-    setToken("");
-    setUser(null);
+  // =================================
+  // DEMO LOGIN
+  // =================================
+
+  async function handleDemoLogin() {
     setAuthError("");
-    setShowResults(false);
-    setSource(null);
-    setDestination(null);
-    setSourceName("");
-    setDestinationName("");
+    setAuthLoading(true);
+
+    try {
+      const data = await loginAsDemo();
+
+      sessionStorage.setItem(TOKEN_KEY, data.token);
+
+      setUser(data.user);
+      setToken(data.token);
+
+    } catch (error) {
+      setAuthError(
+        error.message || "Demo login failed."
+      );
+    } finally {
+      setAuthLoading(false);
+    }
   }
 
-  // Select locations by clicking directly on the map.
+  // =================================
+  // LOGOUT
+  // =================================
+
+  function handleLogout() {
+    sessionStorage.removeItem(TOKEN_KEY);
+
+    setToken("");
+    setUser(null);
+
+    setAuthError("");
+
+    setShowResults(false);
+
+    setSource(null);
+    setDestination(null);
+
+    setSourceName("");
+    setDestinationName("");
+
+    setSlider(50);
+    setSelectedRoute("balanced");
+    setAuthMode("login");
+  }
+
+  // =================================
+  // MAP LOCATION SELECTION
+  // =================================
+
   function handleSourceSelect(point) {
     setSource(point);
-    setSourceName(`Map location (${point.lat.toFixed(4)}, ${point.lng.toFixed(4)})`);
+
+    setSourceName(
+      `Map location (${point.lat.toFixed(4)}, ${point.lng.toFixed(4)})`
+    );
+
     setShowResults(false);
   }
 
   function handleDestinationSelect(point) {
     setDestination(point);
-    setDestinationName(`Map location (${point.lat.toFixed(4)}, ${point.lng.toFixed(4)})`);
+
+    setDestinationName(
+      `Map location (${point.lat.toFixed(4)}, ${point.lng.toFixed(4)})`
+    );
+
     setShowResults(false);
   }
 
-  // Select locations from the autocomplete suggestions.
+  // =================================
+  // SEARCH LOCATION SELECTION
+  // =================================
+
   function handleSourcePlaceSelect(place) {
-    setSource({ lat: place.lat, lng: place.lng });
+    setSource({
+      lat: place.lat,
+      lng: place.lng,
+    });
+
     setSourceName(place.name);
     setShowResults(false);
   }
 
   function handleDestinationPlaceSelect(place) {
-    setDestination({ lat: place.lat, lng: place.lng });
+    setDestination({
+      lat: place.lat,
+      lng: place.lng,
+    });
+
     setDestinationName(place.name);
     setShowResults(false);
   }
 
-  // If the user edits a selected location, clear its old coordinates
-  // until a new suggestion is selected or a point is chosen on the map.
+  // =================================
+  // LOCATION INPUT CHANGES
+  // =================================
+
   function handleSourceInput(value) {
     setSourceName(value);
     setSource(null);
@@ -185,9 +286,13 @@ export default function App() {
     setShowResults(false);
   }
 
-  // Slider
+  // =================================
+  // ROUTE PREFERENCE SLIDER
+  // =================================
+
   function handleSliderChange(event) {
     const value = Number(event.target.value);
+
     setSlider(value);
 
     if (value < 33) {
@@ -199,26 +304,42 @@ export default function App() {
     }
   }
 
-  // Demo route search. The displayed route metrics are currently illustrative.
+  // =================================
+  // FIND ROUTES
+  // =================================
+
   function handleFindRoutes() {
     if (!source || !destination) {
-      alert("Please enter and select both locations, or choose them on the map.");
+      alert(
+        "Please select both locations using search suggestions or the map."
+      );
+
       return;
     }
 
-    if (source.lat === destination.lat && source.lng === destination.lng) {
-      alert("Starting point and destination cannot be the same.");
+    if (
+      source.lat === destination.lat &&
+      source.lng === destination.lng
+    ) {
+      alert(
+        "Starting point and destination cannot be the same."
+      );
+
       return;
     }
 
     setShowResults(true);
   }
 
+  // Currently selected route
   const activeRoute = routes.find(
     (route) => route.id === selectedRoute
   );
 
-  // Checking saved login
+  // =================================
+  // AUTHENTICATION LOADING
+  // =================================
+
   if (authLoading) {
     return (
       <div className="auth-loading">
@@ -228,13 +349,14 @@ export default function App() {
     );
   }
 
-  // ==========================
+  // =================================
   // LOGIN / SIGNUP PAGE
-  // ==========================
+  // =================================
 
   if (!user) {
     return (
       <div className="auth-page">
+
         <style>{`
           .auth-page {
             min-height: 100vh;
@@ -245,6 +367,7 @@ export default function App() {
             background: linear-gradient(135deg, #10233f, #1e40af);
             font-family: Inter, sans-serif;
           }
+
           .auth-card {
             background: white;
             width: 100%;
@@ -253,10 +376,12 @@ export default function App() {
             border-radius: 18px;
             box-shadow: 0 20px 60px #0003;
           }
+
           .auth-logo {
             text-align: center;
             margin-bottom: 25px;
           }
+
           .auth-logo-icon {
             display: inline-flex;
             align-items: center;
@@ -269,16 +394,19 @@ export default function App() {
             font-size: 25px;
             font-weight: 800;
           }
+
           .auth-logo h1 {
             margin-top: 12px;
             color: #172b4d;
             font-size: 26px;
           }
+
           .auth-logo p {
             color: #64748b;
             font-size: 13px;
             margin-top: 7px;
           }
+
           .auth-tabs {
             display: flex;
             background: #f1f5f9;
@@ -286,6 +414,7 @@ export default function App() {
             border-radius: 9px;
             margin-bottom: 25px;
           }
+
           .auth-tabs button {
             flex: 1;
             border: none;
@@ -294,22 +423,27 @@ export default function App() {
             background: transparent;
             color: #64748b;
             font-weight: 600;
+            cursor: pointer;
           }
+
           .auth-tabs button.active {
             background: white;
             color: #2563eb;
             box-shadow: 0 1px 5px #0001;
           }
+
           .auth-card h2 {
             color: #172b4d;
             font-size: 21px;
             margin-bottom: 7px;
           }
+
           .auth-subtitle {
             color: #64748b;
             font-size: 13px;
             margin-bottom: 22px;
           }
+
           .auth-field {
             display: block;
             color: #334155;
@@ -317,6 +451,7 @@ export default function App() {
             font-weight: 700;
             margin-bottom: 17px;
           }
+
           .auth-field input {
             display: block;
             width: 100%;
@@ -328,10 +463,12 @@ export default function App() {
             outline: none;
             font-size: 13px;
           }
+
           .auth-field input:focus {
             border-color: #2563eb;
             box-shadow: 0 0 0 3px #2563eb18;
           }
+
           .auth-submit {
             width: 100%;
             padding: 13px;
@@ -341,11 +478,14 @@ export default function App() {
             background: #2563eb;
             font-weight: 700;
             margin-top: 5px;
+            cursor: pointer;
           }
+
           .auth-submit:disabled {
             opacity: .6;
             cursor: not-allowed;
           }
+
           .auth-error {
             background: #fef2f2;
             color: #b91c1c;
@@ -354,12 +494,14 @@ export default function App() {
             font-size: 12px;
             margin-bottom: 15px;
           }
+
           .auth-footer {
             text-align: center;
             margin-top: 22px;
             font-size: 12px;
             color: #64748b;
           }
+
           .auth-footer button {
             border: none;
             background: none;
@@ -367,6 +509,24 @@ export default function App() {
             font-weight: 700;
             cursor: pointer;
           }
+
+          .demo-button {
+            width: 100%;
+            padding: 12px;
+            margin-top: 12px;
+            border: 1px solid #2563eb;
+            border-radius: 8px;
+            color: #2563eb;
+            background: white;
+            font-weight: 700;
+            cursor: pointer;
+          }
+
+          .demo-button:disabled {
+            opacity: .6;
+            cursor: not-allowed;
+          }
+
           .auth-loading {
             min-height: 100vh;
             display: grid;
@@ -377,16 +537,24 @@ export default function App() {
         `}</style>
 
         <div className="auth-card">
+
           <div className="auth-logo">
             <div className="auth-logo-icon">S</div>
+
             <h1>SafeRoute</h1>
+
             <p>Risk-aware route planning</p>
           </div>
 
+          {/* AUTH TABS */}
+
           <div className="auth-tabs">
+
             <button
               type="button"
-              className={authMode === "login" ? "active" : ""}
+              className={
+                authMode === "login" ? "active" : ""
+              }
               onClick={() => {
                 setAuthMode("login");
                 setAuthError("");
@@ -397,7 +565,9 @@ export default function App() {
 
             <button
               type="button"
-              className={authMode === "signup" ? "active" : ""}
+              className={
+                authMode === "signup" ? "active" : ""
+              }
               onClick={() => {
                 setAuthMode("signup");
                 setAuthError("");
@@ -405,6 +575,7 @@ export default function App() {
             >
               Sign up
             </button>
+
           </div>
 
           <h2>
@@ -419,10 +590,14 @@ export default function App() {
               : "Join SafeRoute and plan your journeys."}
           </p>
 
+          {/* AUTH FORM */}
+
           <form onSubmit={handleAuthSubmit}>
+
             {authMode === "signup" && (
               <label className="auth-field">
                 Full name
+
                 <input
                   type="text"
                   name="name"
@@ -436,6 +611,7 @@ export default function App() {
 
             <label className="auth-field">
               Email address
+
               <input
                 type="email"
                 name="email"
@@ -446,6 +622,7 @@ export default function App() {
 
             <label className="auth-field">
               Password
+
               <input
                 type="password"
                 name="password"
@@ -473,9 +650,24 @@ export default function App() {
                 ? "Log in"
                 : "Create account"}
             </button>
+
           </form>
 
+          {/* DEMO LOGIN */}
+
+          <button
+            type="button"
+            className="demo-button"
+            onClick={handleDemoLogin}
+            disabled={authLoading}
+          >
+            Continue as Demo User
+          </button>
+
+          {/* AUTH FOOTER */}
+
           <p className="auth-footer">
+
             {authMode === "login"
               ? "New to SafeRoute? "
               : "Already have an account? "}
@@ -484,32 +676,47 @@ export default function App() {
               type="button"
               onClick={() => {
                 setAuthMode(
-                  authMode === "login" ? "signup" : "login"
+                  authMode === "login"
+                    ? "signup"
+                    : "login"
                 );
+
                 setAuthError("");
               }}
             >
-              {authMode === "login" ? "Sign up" : "Log in"}
+              {authMode === "login"
+                ? "Sign up"
+                : "Log in"}
             </button>
+
           </p>
+
         </div>
+
       </div>
     );
   }
 
-  // ==========================
+  // =================================
   // SAFEROUTE DASHBOARD
-  // ==========================
+  // =================================
 
   return (
     <div className="app">
+
+      {/* HEADER */}
+
       <header className="topbar">
+
         <div className="brand">
+
           <div className="brand-icon">S</div>
+
           <div>
             <h2>SafeRoute</h2>
             <span>Risk-aware route planning</span>
           </div>
+
         </div>
 
         <nav className="top-nav">
@@ -518,10 +725,15 @@ export default function App() {
         </nav>
 
         <div className="profile">
+
           <div className="profile-avatar">
-            {(user.name || "U").charAt(0).toUpperCase()}
+            {(user.name || "U")
+              .charAt(0)
+              .toUpperCase()}
           </div>
+
           <span>{user.name}</span>
+
           <button
             type="button"
             onClick={handleLogout}
@@ -529,96 +741,73 @@ export default function App() {
           >
             Log out
           </button>
+
         </div>
+
       </header>
 
       <main className="dashboard">
+
+        {/* INTRO SECTION */}
+
         <section className="welcome-section">
+
           <div>
-            <p className="eyebrow">SMARTER ROUTES. BETTER AWARENESS.</p>
-            <h1>Plan your journey with confidence.</h1>
-            <p className="welcome-text">
-              Compare routes based on travel time and estimated road risk.
-              Choose the balance that works for you.
+
+            <p className="eyebrow">
+              SMARTER ROUTES. BETTER AWARENESS.
             </p>
+
+            <h1>
+              Plan your journey with confidence.
+            </h1>
+
+            <p className="welcome-text">
+              Compare routes based on travel time and
+              estimated road risk. Choose the balance
+              that works for you.
+            </p>
+
           </div>
-            
-<p className="auth-switch">
-  {authMode === "login"
-    ? "New to SafeRoute?"
-    : "Already have an account?"}{" "}
-  <button
-    className="text-button"
-    type="button"
-    onClick={() => {
-      setAuthMode(authMode === "login" ? "signup" : "login");
-      setAuthError("");
-      setAuthMessage("");
-    }}
-  >
-    {authMode === "login" ? "Sign up" : "Log in"}
-  </button>
-
-  {authMode === "login" && (
-    <button
-      className="text-button"
-      type="button"
-      onClick={() => {
-        setAuthMode("demo");
-        setAuthError("");
-        setAuthMessage("");
-      }}
-    >
-      Continue as Demo User
-    </button>
-  )}
-</p>
-
-          </section>
-        </>
-      ) : (
-        <>
-          <section className="intro">
-            <p className="eyebrow">A DIFFERENT WAY TO THINK ABOUT ROUTES</p>
-            <h1>Risk-aware route planning</h1>
-            <p>Compare possible routes by time, distance, and a sample safety score.</p>
-          </section>
-
-          <section className="planner" aria-labelledby="planner-title">
-            <h2 id="planner-title">Plan your route</h2>
-            <form onSubmit={handleSubmit}>
-              <div className="form-row">
-                <label>
-                  Starting point
-                  <select value={source} onChange={(event) => setSource(event.target.value)} required>
-                    {locations.map((location) => <option key={location}>{location}</option>)}
-                  </select>
-                </label>
-                <label>
-                  Destination
-                  <select value={destination} onChange={(event) => setDestination(event.target.value)} required>
-                    {locations.map((location) => <option key={location}>{location}</option>)}
-                  </select>
-                </label>
-              </div>
 
           <div className="status-pill">
-            <span></span> Demo mode
+            <span></span>
+            Demo mode
           </div>
+
         </section>
 
-        <section className="planner-layout" id="planner">
+        {/* PLANNER LAYOUT */}
+
+        <section
+          className="planner-layout"
+          id="planner"
+        >
+
+          {/* LEFT SIDE */}
+
           <div className="planner-left">
+
+            {/* LOCATION PANEL */}
+
             <div className="panel location-panel">
+
               <div className="section-heading">
+
                 <div>
                   <h3>Plan your journey</h3>
-                  <p>Choose where your journey begins and ends.</p>
+
+                  <p>
+                    Choose where your journey begins and ends.
+                  </p>
                 </div>
+
                 <span className="step-number">01</span>
+
               </div>
 
               <div className="location-inputs">
+
                 <LocationSearch
                   label="Starting point"
                   value={sourceName}
@@ -634,29 +823,47 @@ export default function App() {
                   onSelect={handleDestinationPlaceSelect}
                   placeholder="Search destination..."
                 />
+
               </div>
 
               <button
+                type="button"
                 className="primary-button"
                 onClick={handleFindRoutes}
               >
                 Find Routes <span>→</span>
               </button>
+
             </div>
 
+            {/* PREFERENCE PANEL */}
+
             <div className="panel preference-panel">
+
               <div className="section-heading">
+
                 <div>
                   <h3>Route preference</h3>
-                  <p>How much do you value lower estimated risk?</p>
+
+                  <p>
+                    How much do you value lower estimated risk?
+                  </p>
                 </div>
+
                 <span className="step-number">02</span>
+
               </div>
 
               <div className="preference-labels">
+
                 <span>Fastest</span>
-                <strong>{slider}% risk preference</strong>
+
+                <strong>
+                  {slider}% risk preference
+                </strong>
+
                 <span>Safer</span>
+
               </div>
 
               <input
@@ -669,10 +876,16 @@ export default function App() {
               />
 
               <div className="slider-caption">
+
                 <span>Prioritize time</span>
+
                 <span>Prioritize lower risk</span>
+
               </div>
+
             </div>
+
+            {/* MAP PANEL */}
 
             <MapPanel
               source={source}
@@ -680,104 +893,183 @@ export default function App() {
               onSourceSelect={handleSourceSelect}
               onDestinationSelect={handleDestinationSelect}
             />
+
           </div>
 
+          {/* RIGHT SIDE */}
+
           <aside className="planner-right">
+
+            {/* ROUTE RESULTS */}
+
             <div className="panel results-panel">
+
               <div className="section-heading">
+
                 <div>
                   <h3>Route recommendations</h3>
-                  <p>Compare your available options.</p>
+
+                  <p>
+                    Compare your available options.
+                  </p>
                 </div>
+
                 <span className="step-number">03</span>
+
               </div>
 
               {!showResults ? (
+
                 <div className="empty-state">
+
                   <div className="empty-icon">⌖</div>
+
                   <h4>Select your locations</h4>
+
                   <p>
-                    Search for both places above and choose a suggestion,
-                    or click the map to select either location.
+                    Search for both places above and choose
+                    a suggestion, or click the map to select
+                    either location.
                   </p>
+
                 </div>
+
               ) : (
+
                 <>
+
                   <div className="route-list">
+
                     {routes.map((route) => (
+
                       <button
+                        type="button"
                         key={route.id}
                         className={`route-option ${
-                          selectedRoute === route.id ? "selected" : ""
+                          selectedRoute === route.id
+                            ? "selected"
+                            : ""
                         }`}
-                        onClick={() => setSelectedRoute(route.id)}
+                        onClick={() =>
+                          setSelectedRoute(route.id)
+                        }
                       >
+
                         <div className="route-option-top">
+
                           <strong>{route.name}</strong>
+
                           {route.id === "safe" && (
                             <span className="recommended-tag">
                               Lower risk
                             </span>
                           )}
+
                         </div>
 
                         <div className="route-metrics">
+
                           <span>{route.time}</span>
+
                           <span>{route.distance}</span>
+
                         </div>
 
                         <div className="risk-line">
+
                           <span>Estimated risk</span>
-                          <strong style={{ color: route.color }}>
+
+                          <strong
+                            style={{ color: route.color }}
+                          >
                             {route.risk}/100
                           </strong>
+
                         </div>
 
                         <div className="risk-track">
+
                           <div
                             style={{
                               width: `${route.risk}%`,
                               background: route.color,
                             }}
                           />
+
                         </div>
 
                         <small>{route.description}</small>
+
                       </button>
+
                     ))}
+
                   </div>
 
                   {activeRoute && (
+
                     <div className="selected-summary">
-                      <h4>Selected: {activeRoute.name}</h4>
+
+                      <h4>
+                        Selected: {activeRoute.name}
+                      </h4>
+
                       <p>
                         {activeRoute.time} · {activeRoute.distance}
                       </p>
+
                       <p>
                         High-risk road segments: {activeRoute.highRisk}
                       </p>
+
                     </div>
+
                   )}
+
                 </>
+
               )}
+
             </div>
 
-            <div className="panel insight-panel" id="insights">
+            {/* SAFETY INSIGHTS */}
+
+            <div
+              className="panel insight-panel"
+              id="insights"
+            >
+
               <div className="section-heading">
+
                 <div>
                   <h3>Safety breakdown</h3>
-                  <p>Illustrative factor scores for the selected route.</p>
+
+                  <p>
+                    Illustrative factor scores for the selected route.
+                  </p>
                 </div>
+
               </div>
 
               {factors.map((factor) => (
-                <div className="factor" key={factor.name}>
+
+                <div
+                  className="factor"
+                  key={factor.name}
+                >
+
                   <div className="factor-heading">
+
                     <span>{factor.name}</span>
-                    <strong>{factor.value}/100</strong>
+
+                    <strong>
+                      {factor.value}/100
+                    </strong>
+
                   </div>
 
                   <div className="factor-track">
+
                     <div
                       style={{
                         width: `${factor.value}%`,
@@ -789,40 +1081,69 @@ export default function App() {
                             : "#269b69",
                       }}
                     />
+
                   </div>
+
                 </div>
+
               ))}
 
               <div className="explanation">
+
                 <strong>Understanding the scores</strong>
+
                 <p>
-                  Each factor contributes to the estimated road-risk score.
-                  Higher factor values indicate a greater concern in this
+                  Each factor contributes to the estimated
+                  road-risk score. Higher factor values
+                  indicate a greater concern in this
                   illustrative demo.
                 </p>
+
               </div>
+
             </div>
+
           </aside>
+
         </section>
+
+        {/* DISCLAIMER */}
 
         <section className="disclaimer">
+
           <span>ⓘ</span>
+
           <div>
-            <strong>Important safety information</strong>
+
+            <strong>
+              Important safety information
+            </strong>
+
             <p>
-              SafeRoute provides estimated risk information based on
-              available data. Scores shown here are illustrative demo
-              values and do not guarantee personal safety.
+              SafeRoute provides estimated risk information
+              based on available data. Scores shown here
+              are illustrative demo values and do not
+              guarantee personal safety.
             </p>
+
           </div>
+
         </section>
 
+        {/* FOOTER */}
+
         <footer className="footer">
+
           <span>© 2026 SafeRoute</span>
+
           <span>Powered by OpenStreetMap</span>
+
           <span>Estimated risk · Demo data</span>
+
         </footer>
+
       </main>
+
     </div>
   );
 }
