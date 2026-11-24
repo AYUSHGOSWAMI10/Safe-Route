@@ -109,3 +109,36 @@
     align-items: flex-start;
   }
 }
+
+
+.map-panel {
+  overflow: hidden;
+}
+
+.map-heading p {
+  line-height: 1.5;
+}
+
+.safe-map {
+  min-height: 280px;
+}
+
+.map-instructions {
+  align-items: center;
+  line-height: 1.5;
+}
+
+@media (max-width: 650px) {
+  .map-panel {
+    padding: 13px;
+  }
+
+  .safe-map {
+    height: 300px;
+    min-height: 240px;
+  }
+
+  .map-instructions {
+    gap: 9px 14px;
+  }
+}

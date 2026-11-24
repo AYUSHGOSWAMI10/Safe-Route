@@ -1,5 +1,14 @@
 
-import { MapContainer, TileLayer, Marker, Popup, Polyline, useMapEvents } from "react-leaflet";
+import { useEffect } from "react";
+import {
+  MapContainer,
+  TileLayer,
+  Marker,
+  Popup,
+  Polyline,
+  useMap,
+  useMapEvents,
+} from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "./MapPanel.css";
@@ -28,14 +37,45 @@ function MapClickHandler({ source, destination, onSourceSelect, onDestinationSel
 
       if (!source) {
         onSourceSelect(point);
-      } else if (!destination) {
-        onDestinationSelect(point);
       } else {
-        onSourceSelect(point);
-        onDestinationSelect(null);
+        // Once the start is set, map clicks set or update the destination.
+        onDestinationSelect(point);
       }
     },
   });
+
+  return null;
+}
+
+function MapViewport({ source, destination }) {
+  const map = useMap();
+
+  useEffect(() => {
+    const points = [source, destination]
+      .filter(Boolean)
+      .map((point) => [point.lat, point.lng]);
+
+    if (points.length === 2) {
+      const bounds = L.latLngBounds(points);
+
+      if (bounds.getNorthEast().equals(bounds.getSouthWest())) {
+        map.setView(points[0], 15);
+      } else {
+        map.fitBounds(bounds, {
+          padding: [36, 36],
+          maxZoom: 15,
+        });
+      }
+    } else if (points.length === 1) {
+      map.setView(points[0], 15);
+    }
+  }, [
+    map,
+    source?.lat,
+    source?.lng,
+    destination?.lat,
+    destination?.lng,
+  ]);
 
   return null;
 }
@@ -59,7 +99,11 @@ export default function MapPanel({
       <div className="map-heading">
         <div>
           <h3>Route Map</h3>
-          <p>Click on the map to select your locations</p>
+          <p>
+            {!source
+              ? "Click once to set your starting point."
+              : "Click to set or update your destination."}
+          </p>
         </div>
         <span className="map-live">● Map available</span>
       </div>
@@ -74,6 +118,8 @@ export default function MapPanel({
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
+
+        <MapViewport source={source} destination={destination} />
 
         <MapClickHandler
           source={source}

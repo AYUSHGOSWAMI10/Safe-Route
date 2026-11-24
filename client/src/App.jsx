@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 
 import MapPanel from "./MapPanel";
 import LocationSearch from "./components/LocationSearch";
+import RouteHistory from "./components/RouteHistory";
+import SafetyReports from "./components/SafetyReports";
 
 import {
   signup,
@@ -64,6 +66,7 @@ export default function App() {
   // =================================
 
   const [authMode, setAuthMode] = useState("login");
+  const [activeView, setActiveView] = useState("planner");
 
   const [token, setToken] = useState(
     () => sessionStorage.getItem(TOKEN_KEY) || ""
@@ -220,6 +223,7 @@ export default function App() {
     setSlider(50);
     setSelectedRoute("balanced");
     setAuthMode("login");
+    setActiveView("planner");
   }
 
   // =================================
@@ -283,6 +287,15 @@ export default function App() {
   function handleDestinationInput(value) {
     setDestinationName(value);
     setDestination(null);
+    setShowResults(false);
+  }
+
+  // Swap both selected locations and their coordinates.
+  function handleSwapLocations() {
+    setSource(destination);
+    setDestination(source);
+    setSourceName(destinationName);
+    setDestinationName(sourceName);
     setShowResults(false);
   }
 
@@ -719,9 +732,36 @@ export default function App() {
 
         </div>
 
-        <nav className="top-nav">
-          <a href="#planner">Route Planner</a>
-          <a href="#insights">Safety Insights</a>
+        <nav className="top-nav" aria-label="Main navigation">
+          <a
+            href="#planner"
+            className={activeView === "planner" ? "active" : ""}
+            onClick={() => setActiveView("planner")}
+          >
+            Route Planner
+          </a>
+          <a
+            href="#insights"
+            onClick={() => setActiveView("planner")}
+          >
+            Safety Insights
+          </a>
+          <button
+            type="button"
+            className={`history-nav-button ${activeView === "history" ? "active" : ""}`}
+            onClick={() => setActiveView("history")}
+            aria-current={activeView === "history" ? "page" : undefined}
+          >
+            History
+          </button>
+                  <button
+            type="button"
+            className={`history-nav-button ${activeView === "reports" ? "active" : ""}`}
+            onClick={() => setActiveView("reports")}
+            aria-current={activeView === "reports" ? "page" : undefined}
+          >
+            Safety Reports
+          </button>
         </nav>
 
         <div className="profile">
@@ -747,7 +787,14 @@ export default function App() {
       </header>
 
       <main className="dashboard">
-
+        {activeView === "history" ? (
+          <RouteHistory
+            token={token}
+            isDemo={user?.id === "demo-user"}
+            onBack={() => setActiveView("planner")}
+          />
+        ) : (
+          <>
         {/* INTRO SECTION */}
 
         <section className="welcome-section">
@@ -824,6 +871,19 @@ export default function App() {
                   placeholder="Search destination..."
                 />
 
+              </div>
+
+              <div className="location-swap-row">
+                <button
+                  type="button"
+                  className="location-swap-button"
+                  onClick={handleSwapLocations}
+                  disabled={!source && !destination && !sourceName && !destinationName}
+                  aria-label="Swap starting point and destination"
+                >
+                  <span aria-hidden="true">⇅</span>
+                  Swap locations
+                </button>
               </div>
 
               <button
@@ -1141,7 +1201,8 @@ export default function App() {
           <span>Estimated risk · Demo data</span>
 
         </footer>
-
+          </>
+        )}
       </main>
 
     </div>
