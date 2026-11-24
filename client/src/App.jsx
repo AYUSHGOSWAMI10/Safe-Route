@@ -286,6 +286,15 @@ export default function App() {
     setShowResults(false);
   }
 
+  // Swap both selected locations and their coordinates.
+  function handleSwapLocations() {
+    setSource(destination);
+    setDestination(source);
+    setSourceName(destinationName);
+    setDestinationName(sourceName);
+    setShowResults(false);
+  }
+
   // =================================
   // ROUTE PREFERENCE SLIDER
   // =================================
@@ -824,6 +833,19 @@ export default function App() {
                   placeholder="Search destination..."
                 />
 
+              </div>
+
+              <div className="location-swap-row">
+                <button
+                  type="button"
+                  className="location-swap-button"
+                  onClick={handleSwapLocations}
+                  disabled={!source && !destination && !sourceName && !destinationName}
+                  aria-label="Swap starting point and destination"
+                >
+                  <span aria-hidden="true">⇅</span>
+                  Swap locations
+                </button>
               </div>
 
               <button

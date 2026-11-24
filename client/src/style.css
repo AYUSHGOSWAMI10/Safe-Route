@@ -802,3 +802,72 @@ a {
   color: #64748b;
   font-size: 12px;
 }
+
+
+/* ================================
+   LOCATION SWAP CONTROL
+================================ */
+
+.location-swap-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: -7px;
+}
+
+.location-swap-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 11px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #f8fafc;
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 700;
+  transition: background 0.2s, border-color 0.2s, transform 0.2s;
+}
+
+.location-swap-button:hover:not(:disabled) {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  transform: translateY(-1px);
+}
+
+.location-swap-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.location-swap-button span {
+  font-size: 17px;
+  line-height: 1;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible {
+  outline: 3px solid rgba(37, 99, 235, 0.35);
+  outline-offset: 2px;
+}
+
+@media (max-width: 650px) {
+  .location-swap-row {
+    margin-top: -8px;
+  }
+
+  .location-swap-button {
+    min-height: 36px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
