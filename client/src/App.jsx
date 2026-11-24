@@ -4,6 +4,9 @@ import MapPanel from "./MapPanel";
 import LocationSearch from "./components/LocationSearch";
 import { signup, login, getMe } from "./services/auth";
 import "./style.css";
+import RouteCard from "./components/RouteCard.jsx";
+import { findRoutes, getLocations } from "./services/routes.js";
+import { signup, login, loginAsDemo, getMe } from "./services/auth.js";
 
 const TOKEN_KEY = "saferoute_token";
 
@@ -114,6 +117,8 @@ export default function App() {
       if (authMode === "signup") {
         const name = form.get("name");
         data = await signup({ name, email, password });
+      } else if (authMode === "demo") {
+        data = await loginAsDemo();
       } else {
         data = await login({ email, password });
       }
@@ -537,6 +542,65 @@ export default function App() {
               Choose the balance that works for you.
             </p>
           </div>
+            
+<p className="auth-switch">
+  {authMode === "login"
+    ? "New to SafeRoute?"
+    : "Already have an account?"}{" "}
+  <button
+    className="text-button"
+    type="button"
+    onClick={() => {
+      setAuthMode(authMode === "login" ? "signup" : "login");
+      setAuthError("");
+      setAuthMessage("");
+    }}
+  >
+    {authMode === "login" ? "Sign up" : "Log in"}
+  </button>
+
+  {authMode === "login" && (
+    <button
+      className="text-button"
+      type="button"
+      onClick={() => {
+        setAuthMode("demo");
+        setAuthError("");
+        setAuthMessage("");
+      }}
+    >
+      Continue as Demo User
+    </button>
+  )}
+</p>
+
+          </section>
+        </>
+      ) : (
+        <>
+          <section className="intro">
+            <p className="eyebrow">A DIFFERENT WAY TO THINK ABOUT ROUTES</p>
+            <h1>Risk-aware route planning</h1>
+            <p>Compare possible routes by time, distance, and a sample safety score.</p>
+          </section>
+
+          <section className="planner" aria-labelledby="planner-title">
+            <h2 id="planner-title">Plan your route</h2>
+            <form onSubmit={handleSubmit}>
+              <div className="form-row">
+                <label>
+                  Starting point
+                  <select value={source} onChange={(event) => setSource(event.target.value)} required>
+                    {locations.map((location) => <option key={location}>{location}</option>)}
+                  </select>
+                </label>
+                <label>
+                  Destination
+                  <select value={destination} onChange={(event) => setDestination(event.target.value)} required>
+                    {locations.map((location) => <option key={location}>{location}</option>)}
+                  </select>
+                </label>
+              </div>
 
           <div className="status-pill">
             <span></span> Demo mode

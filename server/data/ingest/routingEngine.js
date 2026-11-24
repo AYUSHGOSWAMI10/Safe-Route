@@ -1,4 +1,5 @@
 const { getEdgeCost, haversineM } = require("./routeWeights");
+const { periodOf } = require("./riskConfig");
 
 const validModes = new Set(["faster", "balanced", "safer", "custom"]);
 
@@ -7,7 +8,10 @@ function isValidMode(mode) {
     return validModes.has(mode);
   }
   if (mode && typeof mode === "object") {
-    return Number.isFinite(mode.slider) && mode.slider >= 0 && mode.slider <= 1;
+    return (
+      (Number.isFinite(mode.slider) && mode.slider >= 0 && mode.slider <= 1) ||
+      (typeof mode.mode === "string" && validModes.has(mode.mode))
+    );
   }
   if (typeof mode === "number") {
     return Number.isFinite(mode) && mode >= 0 && mode <= 1;
@@ -102,6 +106,9 @@ class RouteResult {
     message = null,
     source = null,
     destination = null,
+    nodesExpanded = 0,
+    computeTimeMs = 0,
+    metadata = null,
   } = {}) {
     this.status = status;
     this.found = found;
@@ -111,19 +118,31 @@ class RouteResult {
     if (message) this.message = message;
     if (source) this.source = source;
     if (destination) this.destination = destination;
+    this.nodesExpanded = nodesExpanded;
+    this.computeTimeMs = computeTimeMs;
+    this.metadata = metadata || {
+      nodesExpanded,
+      computeTimeMs,
+    };
   }
 
-  static found(nodes, weightedCost) {
+  static found(nodes, weightedCost, stats = {}) {
     return new RouteResult({
       status: "FOUND",
       found: true,
       nodes,
       weightedCost,
+      nodesExpanded: stats.nodesExpanded ?? 0,
+      computeTimeMs: stats.computeTimeMs ?? 0,
+      metadata: stats.metadata || {
+        nodesExpanded: stats.nodesExpanded ?? 0,
+        computeTimeMs: stats.computeTimeMs ?? 0,
+      },
     });
   }
 
-  static noRoute(source, destination, reason = "No path between disconnected nodes") {
-    return new NoRouteResult(source, destination, reason);
+  static noRoute(source, destination, reason = "No path between disconnected nodes", stats = {}) {
+    return new NoRouteResult(source, destination, reason, stats);
   }
 }
 
@@ -131,7 +150,7 @@ class RouteResult {
  * Dedicated typed class representing a no-route / disconnected nodes result.
  */
 class NoRouteResult extends RouteResult {
-  constructor(source = null, destination = null, reason = "No path between disconnected nodes") {
+  constructor(source = null, destination = null, reason = "No path between disconnected nodes", stats = {}) {
     super({
       status: "NO_ROUTE",
       found: false,
@@ -141,6 +160,12 @@ class NoRouteResult extends RouteResult {
       message: reason,
       source,
       destination,
+      nodesExpanded: stats.nodesExpanded ?? 0,
+      computeTimeMs: stats.computeTimeMs ?? 0,
+      metadata: stats.metadata || {
+        nodesExpanded: stats.nodesExpanded ?? 0,
+        computeTimeMs: stats.computeTimeMs ?? 0,
+      },
     });
   }
 }
@@ -189,6 +214,8 @@ function findRoute(adjacency, source, destination, mode = "faster") {
     return null;
   }
 
+  const startTime = performance.now();
+  let nodesExpanded = 0;
   const dist = new Map([[source, 0]]);
   const prev = new Map();
   const visited = new Set();
@@ -199,9 +226,11 @@ function findRoute(adjacency, source, destination, mode = "faster") {
     const { id: current } = pq.pop();
 
     if (visited.has(current)) continue;
+    visited.add(current);
+    nodesExpanded++;
+
     if (current === destination) break;
 
-    visited.add(current);
     const currentDist = dist.get(current);
 
     for (const connection of adjacency.get(current) || []) {
@@ -218,8 +247,11 @@ function findRoute(adjacency, source, destination, mode = "faster") {
     }
   }
 
+  const computeTimeMs = Number((performance.now() - startTime).toFixed(3));
+  const stats = { nodesExpanded, computeTimeMs };
+
   if (!dist.has(destination)) {
-    return RouteResult.noRoute(source, destination, "No connected walking route found between nodes.");
+    return RouteResult.noRoute(source, destination, "No connected walking route found between nodes.", stats);
   }
 
   const route = [];
@@ -230,7 +262,7 @@ function findRoute(adjacency, source, destination, mode = "faster") {
 
   route.reverse();
 
-  return RouteResult.found(route, dist.get(destination));
+  return RouteResult.found(route, dist.get(destination), stats);
 }
 
 /**
@@ -251,6 +283,9 @@ function findRouteAStar(adjacency, coords, source, destination, mode = "faster")
   if (!adjacency.has(source) || !adjacency.has(destination)) {
     return null;
   }
+
+  const startTime = performance.now();
+  let nodesExpanded = 0;
 
   const destCoord = coords[destination];
   const hasHeuristic =
@@ -279,9 +314,11 @@ function findRouteAStar(adjacency, coords, source, destination, mode = "faster")
     const { id: current } = pq.pop();
 
     if (visited.has(current)) continue;
+    visited.add(current);
+    nodesExpanded++;
+
     if (current === destination) break;
 
-    visited.add(current);
     const currentDist = dist.get(current);
 
     for (const connection of adjacency.get(current) || []) {
@@ -299,8 +336,11 @@ function findRouteAStar(adjacency, coords, source, destination, mode = "faster")
     }
   }
 
+  const computeTimeMs = Number((performance.now() - startTime).toFixed(3));
+  const stats = { nodesExpanded, computeTimeMs };
+
   if (!dist.has(destination)) {
-    return RouteResult.noRoute(source, destination, "No connected walking route found between nodes.");
+    return RouteResult.noRoute(source, destination, "No connected walking route found between nodes.", stats);
   }
 
   const route = [];
@@ -311,7 +351,7 @@ function findRouteAStar(adjacency, coords, source, destination, mode = "faster")
 
   route.reverse();
 
-  return RouteResult.found(route, dist.get(destination));
+  return RouteResult.found(route, dist.get(destination), stats);
 }
 
 module.exports = {
@@ -325,4 +365,5 @@ module.exports = {
   RouteResult,
   NoRouteResult,
   isRouteFound,
+  periodOf,
 };

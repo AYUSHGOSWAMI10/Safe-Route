@@ -3,6 +3,12 @@ const RouteHistory = require("../models/RouteHistory");
 
 async function createHistory(req, res) {
   try {
+    if (req.isDemo) {
+      return res.status(403).json({
+        success: false,
+        message: "Route history is not available in demo mode.",
+      });
+    }
     const {
       source,
       destination,
@@ -68,6 +74,13 @@ async function createHistory(req, res) {
 
 async function getHistory(req, res) {
   try {
+    if (req.isDemo) {
+      return res.json({
+        success: true,
+        history: [],
+        message: "Route history is not available in demo mode.",
+      });
+    }
     const history = await RouteHistory.find({
       userId: req.userId,
     })
@@ -97,6 +110,12 @@ async function getHistoryById(req, res) {
   }
 
   try {
+    if (req.isDemo) {
+      return res.status(403).json({
+        success: false,
+        message: "Route history is not available in demo mode.",
+      });
+    }
     const history = await RouteHistory.findOne({
       _id: req.params.id,
       userId: req.userId,

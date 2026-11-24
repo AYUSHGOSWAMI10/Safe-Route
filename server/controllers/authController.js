@@ -22,6 +22,65 @@ function publicUser(user) {
   };
 }
 
+async function demoLogin(req, res) {
+  try {
+    const demoEmail = process.env.DEMO_EMAIL;
+    const demoPassword = process.env.DEMO_PASSWORD;
+
+    if (!demoEmail || !demoPassword) {
+      return res.status(500).json({
+        success: false,
+        message: "Demo login is not configured.",
+      });
+    }
+
+    const { email, password } = req.body;
+
+    // Check if demo mode is enabled
+    const nodeEnv = process.env.NODE_ENV || "development";
+    const demoLoginEnabled = process.env.DEMO_LOGIN_ENABLED === "true";
+
+    if (nodeEnv === "production" || !demoLoginEnabled) {
+      return res.status(403).json({
+        success: false,
+        message: "Demo login is disabled.",
+      });
+    }
+
+    // Validate credentials
+    if (email !== demoEmail || password !== demoPassword) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid demo credentials.",
+      });
+    }
+
+    // Generate JWT for demo user
+    const token = jwt.sign(
+      { sub: "demo-user" },
+      process.env.JWT_SECRET,
+      { expiresIn: "1h" }
+    );
+
+    return res.json({
+      success: true,
+      message: "Demo login successful.",
+      token,
+      user: {
+        id: "demo-user",
+        name: "Demo User",
+        email: demoEmail,
+      },
+    });
+  } catch (error) {
+    console.error("Demo login error:", error.message);
+    return res.status(500).json({
+      success: false,
+      message: "Unable to perform demo login.",
+    });
+  }
+}
+
 async function signup(req, res) {
   try {
     const { name, email, password } = req.body;
@@ -153,6 +212,17 @@ async function login(req, res) {
 
 async function me(req, res) {
   try {
+    if (req.isDemo) {
+      return res.json({
+        success: true,
+        user: {
+          id: "demo-user",
+          name: "Demo User",
+          email: process.env.DEMO_EMAIL || "demo@saferoute.local",
+          role: "user",
+        },
+      });
+    }
     const user = await User.findById(req.userId);
 
     if (!user) {
@@ -175,4 +245,4 @@ async function me(req, res) {
   }
 }
 
-module.exports = { signup, login, me };
+module.exports = { signup, login, me, demoLogin };

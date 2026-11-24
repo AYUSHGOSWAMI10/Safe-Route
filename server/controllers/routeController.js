@@ -10,7 +10,11 @@ const {
   RouteResult,
   NoRouteResult,
 } = require("../data/ingest/routingEngine");
-const { getRiskBand } = require("../data/ingest/riskConfig");
+const { getRiskBand, periodOf } = require("../data/ingest/riskConfig");
+const {
+  assembleRoute,
+  SAMPLE_PLACE_COORDINATES,
+} = require("../data/ingest/routeAssembly");
 
 let cachedWalkingGraph = null;
 let cachedWalkingAdjacency = null;
@@ -31,25 +35,35 @@ async function getRoads() {
 function buildPlaceGraph(roads) {
   const nodes = {};
   for (const road of roads) {
-    nodes[road.source] = { name: road.source };
-    nodes[road.destination] = { name: road.destination };
+    const srcCoord = SAMPLE_PLACE_COORDINATES[road.source] || { lat: 27.5700, lng: 77.6750 };
+    const dstCoord = SAMPLE_PLACE_COORDINATES[road.destination] || { lat: 27.5850, lng: 77.6950 };
+    nodes[road.source] = { name: road.source, ...srcCoord };
+    nodes[road.destination] = { name: road.destination, ...dstCoord };
   }
 
-  const edges = roads.map((road, idx) => ({
-    id: `edge_${idx}`,
-    from: road.source,
-    to: road.destination,
-    lengthM: (road.distance || 0) * 1000,
-    road: { name: `${road.source} - ${road.destination}` },
-    safety: {
-      trafficExposure: Number(
-        Math.max(0, Math.min(5, (1 - (road.safetyScore ?? 50) / 100) * 5)).toFixed(2)
-      ),
-    },
-    distance: road.distance,
-    estimatedTime: road.estimatedTime,
-    safetyScore: road.safetyScore,
-  }));
+  const edges = roads.map((road, idx) => {
+    const srcCoord = SAMPLE_PLACE_COORDINATES[road.source] || { lat: 27.5700, lng: 77.6750 };
+    const dstCoord = SAMPLE_PLACE_COORDINATES[road.destination] || { lat: 27.5850, lng: 77.6950 };
+    return {
+      id: `edge_${idx}`,
+      from: road.source,
+      to: road.destination,
+      geometry: [
+        [srcCoord.lng, srcCoord.lat],
+        [dstCoord.lng, dstCoord.lat],
+      ],
+      lengthM: (road.distance || 0) * 1000,
+      road: { name: `${road.source} - ${road.destination}` },
+      safety: {
+        trafficExposure: Number(
+          Math.max(0, Math.min(5, (1 - (road.safetyScore ?? 50) / 100) * 5)).toFixed(2)
+        ),
+      },
+      distance: road.distance,
+      estimatedTime: road.estimatedTime,
+      safetyScore: road.safetyScore,
+    };
+  });
 
   return { nodes, edges };
 }
@@ -81,71 +95,8 @@ function loadWalkingGraph(customPath) {
   return { graph, adjacency };
 }
 
-function calculateRouteStats(nodeIds, adjacency, isPlaceGraph = true) {
-  let totalDistance = 0;
-  let totalTime = 0;
-  let weightedSafetySum = 0;
-  let totalLengthM = 0;
-  let exposureWeightedDistanceM = 0;
-
-  for (let i = 0; i < nodeIds.length - 1; i++) {
-    const from = nodeIds[i];
-    const to = nodeIds[i + 1];
-    const neighbors = adjacency.get(from) || [];
-    const connection = neighbors.find((c) => c.to === to);
-
-    if (!connection || !connection.edge) {
-      throw new Error(`Missing graph edge between ${from} and ${to}`);
-    }
-
-    const edge = connection.edge;
-
-    if (isPlaceGraph) {
-      const dist = edge.distance ?? (edge.lengthM ? edge.lengthM / 1000 : 0);
-      const time = edge.estimatedTime ?? Math.max(1, Math.round((dist * 1000) / 83.33));
-      const safety = edge.safetyScore ?? 50;
-
-      totalDistance += dist;
-      totalTime += time;
-      weightedSafetySum += safety * dist;
-    } else {
-      const lengthM = edge.lengthM || 0;
-      totalLengthM += lengthM;
-
-      const exposure = edge.safety?.trafficExposure;
-      if (typeof exposure === "number" && exposure >= 0 && exposure <= 5) {
-        exposureWeightedDistanceM += (exposure / 5) * lengthM;
-      }
-    }
-  }
-
-  if (isPlaceGraph) {
-    const distanceKm = Number(totalDistance.toFixed(1));
-    const estimatedTimeMin = totalTime;
-    const safetyScore = totalDistance > 0 ? Math.round(weightedSafetySum / totalDistance) : 50;
-
-    return {
-      distanceKm,
-      estimatedTimeMin,
-      safetyScore,
-      riskBand: getRiskBand(1 - safetyScore / 100),
-    };
-  }
-
-  const distanceKm = Number((totalLengthM / 1000).toFixed(1));
-  const estimatedTimeMin = Math.max(1, Math.round(totalLengthM / 83.33));
-  let safetyScore = 100;
-  if (totalLengthM > 0) {
-    const avgExposure = exposureWeightedDistanceM / totalLengthM;
-    safetyScore = Math.max(0, Math.min(100, Math.round((1 - avgExposure) * 100)));
-  }
-
-  return {
-    distanceKm,
-    estimatedTimeMin,
-    safetyScore,
-    riskBand: getRiskBand(1 - safetyScore / 100),
-  };
+function calculateRouteStats(nodeIds, adjacency, isPlaceGraph = true, options = {}) {
+  return assembleRoute(nodeIds, adjacency, { isPlaceGraph, ...options });
 }
 
 async function getLocations(req, res) {
@@ -162,7 +113,7 @@ async function getLocations(req, res) {
 }
 
 async function findRoutes(req, res) {
-  const { source, destination, preference = "balanced", slider } = req.body || {};
+  const { source, destination, preference = "balanced", slider, departAt } = req.body || {};
 
   const src =
     typeof source === "number"
@@ -189,6 +140,8 @@ async function findRoutes(req, res) {
   if (!validModes.has(mode)) {
     return res.status(400).json({ error: "Choose Faster, Balanced, or Safer." });
   }
+
+  const period = periodOf(departAt);
 
   // Parse optional custom slider value if provided
   let customSlider = null;
@@ -235,7 +188,10 @@ async function findRoutes(req, res) {
     return res.status(404).json({ error: "One or both locations are outside the walking graph." });
   }
 
-  const queryForMode = mode === "custom" && customSlider !== null ? { slider: customSlider } : mode;
+  const queryForMode =
+    mode === "custom" && customSlider !== null
+      ? { slider: customSlider, period }
+      : { mode, period };
   const selectedResult = findRoute(adjacency, src, dst, queryForMode);
   if (!isRouteFound(selectedResult)) {
     return res.status(404).json({
@@ -245,21 +201,22 @@ async function findRoutes(req, res) {
   }
 
   const candidateProfiles = [
-    { mode: "faster", label: "Route A (Faster)", slider: 0 },
-    { mode: "balanced", label: "Route B (Balanced)", slider: 0.5 },
-    { mode: "safer", label: "Route C (Safer)", slider: 1.0 },
+    { mode: "faster", label: "Route A (Faster)", slider: 0, queryMode: { mode: "faster", slider: 0, period } },
+    { mode: "balanced", label: "Route B (Balanced)", slider: 0.5, queryMode: { mode: "balanced", slider: 0.5, period } },
+    { mode: "safer", label: "Route C (Safer)", slider: 1.0, queryMode: { mode: "safer", slider: 1.0, period } },
   ];
 
   if (customSlider !== null) {
     candidateProfiles.push({
       mode: "custom",
-      queryMode: { slider: customSlider },
+      queryMode: { slider: customSlider, period },
       label: `Route Custom (${customSlider})`,
       slider: customSlider,
     });
   }
 
-  const routesByPath = new Map();
+  const evaluatedProfiles = [];
+  const pathOccurrences = new Map();
 
   for (const prof of candidateProfiles) {
     const qMode = prof.queryMode || prof.mode;
@@ -267,54 +224,81 @@ async function findRoutes(req, res) {
     if (!isRouteFound(result)) continue;
 
     const pathKey = result.nodes.join("->");
-    const stats = calculateRouteStats(result.nodes, adjacency, isPlaceGraph);
-
-    if (routesByPath.has(pathKey)) {
-      const existing = routesByPath.get(pathKey);
-      existing.profiles.push(prof.mode);
-      existing.mergedProfiles.push(prof.mode);
-      existing.merged = true;
-      if (prof.mode === mode) {
-        existing.name = prof.label;
-        existing.preference = prof.mode;
-      }
-    } else {
-      routesByPath.set(pathKey, {
-        name: prof.label,
-        path: result.nodes,
-        distance: stats.distanceKm,
-        estimatedTime: stats.estimatedTimeMin,
-        safetyScore: stats.safetyScore,
-        riskBand: stats.riskBand,
-        cost: Number(result.weightedCost.toFixed(2)),
-        preference: prof.mode,
-        slider: prof.slider,
-        profiles: [prof.mode],
-        mergedProfiles: [prof.mode],
-        merged: false,
-      });
+    if (!pathOccurrences.has(pathKey)) {
+      pathOccurrences.set(pathKey, []);
     }
+    pathOccurrences.get(pathKey).push(prof.mode);
+
+    evaluatedProfiles.push({ prof, result, pathKey });
   }
 
-  const routes = Array.from(routesByPath.values());
-  let recommendedName = null;
+  const routes = evaluatedProfiles.map(({ prof, result, pathKey }) => {
+    const stats = calculateRouteStats(result.nodes, adjacency, isPlaceGraph, { period });
+    const sharedProfiles = pathOccurrences.get(pathKey) || [prof.mode];
+    const isShared = sharedProfiles.length > 1;
 
-  for (const r of routes) {
-    if (r.profiles.includes(mode)) {
-      recommendedName = r.name;
-      break;
-    }
-  }
+    return {
+      name: prof.label,
+      path: result.nodes,
+      distance: stats.distanceKm,
+      distanceKm: stats.distanceKm,
+      distanceM: stats.distanceM,
+      estimatedTime: stats.estimatedTimeMin,
+      estimatedTimeMin: stats.estimatedTimeMin,
+      estimatedTimeSec: stats.estimatedTimeSec,
+      safetyScore: stats.safetyScore,
+      riskScore: stats.riskScore,
+      riskBand: stats.riskBand,
+      geometry: stats.geometry,
+      segments: stats.segments,
+      highRiskPercentage: stats.highRiskPercentage,
+      highRiskLengthM: stats.highRiskLengthM,
+      worstSegment: stats.worstSegment,
+      riskBreakdown: stats.riskBreakdown,
+      dataConfidence: stats.dataConfidence,
+      explanations: stats.explanations,
+      warnings: stats.warnings,
+      cost: Number(result.weightedCost.toFixed(2)),
+      preference: prof.mode,
+      slider: prof.slider,
+      period,
+      nodesExpanded: result.nodesExpanded ?? 0,
+      computeTimeMs: result.computeTimeMs ?? 0,
+      metadata: {
+        nodesExpanded: result.nodesExpanded ?? 0,
+        computeTimeMs: result.computeTimeMs ?? 0,
+        period,
+      },
+      profiles: [prof.mode],
+      mergedProfiles: sharedProfiles,
+      merged: isShared,
+    };
+  });
 
-  if (!recommendedName && routes.length > 0) {
-    recommendedName = routes[0].name;
+  let recommendedRoute = routes.find((r) => r.preference === mode);
+  if (!recommendedRoute) {
+    recommendedRoute = routes.find((r) => r.profiles.includes(mode));
   }
+  const recommendedName = recommendedRoute ? recommendedRoute.name : (routes[0]?.name || null);
+
+  const totalNodesExpanded = routes.reduce((acc, r) => acc + (r.nodesExpanded || 0), 0);
+  const totalComputeTimeMs = Number(
+    routes.reduce((acc, r) => acc + (r.computeTimeMs || 0), 0).toFixed(3)
+  );
 
   return res.json({
     source: src,
     destination: dst,
     routes,
     recommended: recommendedName,
+    metadata: {
+      period,
+      departAt: departAt ? (departAt instanceof Date ? departAt.toISOString() : new Date(departAt).toISOString()) : null,
+      nodesExpanded: totalNodesExpanded,
+      computeTimeMs: totalComputeTimeMs,
+      totalNodesExpanded,
+      totalComputeTimeMs,
+    },
   });
 }
 

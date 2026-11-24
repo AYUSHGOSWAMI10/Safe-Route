@@ -342,6 +342,30 @@ function calculateCost(travelTime, slider, k, normalizedRisk) {
   return travelTime * (1 + s * sensitivity * risk);
 }
 
+/**
+ * Maps a departure timestamp or Date to a risk period:
+ * - "day": 06:00 to 17:59
+ * - "evening": 18:00 to 21:59
+ * - "night": 22:00 to 05:59
+ *
+ * @param {Date|string|number} [departAt] - Departure time
+ * @returns {"day"|"evening"|"night"}
+ */
+function periodOf(departAt) {
+  if (!departAt) return "day";
+  const date = departAt instanceof Date ? departAt : new Date(departAt);
+  if (isNaN(date.getTime())) return "day";
+
+  const hour = date.getHours();
+  if (hour >= 6 && hour < 18) {
+    return "day";
+  } else if (hour >= 18 && hour < 22) {
+    return "evening";
+  } else {
+    return "night";
+  }
+}
+
 module.exports = {
   FACTORS,
   DEFAULT_RISK_CONFIG,
@@ -351,6 +375,7 @@ module.exports = {
   getActiveRiskConfig,
   resetRiskConfig,
   getRiskBand,
+  periodOf,
   deriveEdgeFactors,
   calculateEdgeRisk,
   getEdgeTravelTime,
