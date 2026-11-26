@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import MapPanel from "./MapPanel";
 import LocationSearch from "./components/LocationSearch";
+import AdminDashboard from "./pages/admin/AdminDashboard";
 import { signup, login, getMe } from "./services/auth";
 import "./style.css";
 import RouteCard from "./components/RouteCard.jsx";
@@ -9,6 +10,9 @@ import { findRoutes, getLocations } from "./services/routes.js";
 import { signup, login, loginAsDemo, getMe } from "./services/auth.js";
 
 const TOKEN_KEY = "saferoute_token";
+const ADMIN_SESSION_KEY = "saferoute_admin_session";
+const DEMO_ADMIN_EMAIL = "admin@saferoute.demo";
+const DEMO_ADMIN_PASSWORD = "Admin@123";
 
 const routes = [
   {
@@ -55,6 +59,9 @@ const factors = [
 export default function App() {
   // Authentication state
   const [authMode, setAuthMode] = useState("login");
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(
+    () => sessionStorage.getItem(ADMIN_SESSION_KEY) === "true"
+  );
   const [token, setToken] = useState(
     () => sessionStorage.getItem(TOKEN_KEY) || ""
   );
@@ -71,9 +78,21 @@ export default function App() {
   const [selectedRoute, setSelectedRoute] = useState("balanced");
   const [showResults, setShowResults] = useState(false);
 
+  // Admin dashboard is a separate frontend route.
+  const isAdminDashboard = window.location.pathname === "/admin/dashboard";
+
   // Verify an existing login session
   useEffect(() => {
     let active = true;
+
+    // Admin dashboard does not use the normal user token.
+    if (isAdminDashboard) {
+      setAuthMode("admin");
+      setAuthLoading(false);
+      return () => {
+        active = false;
+      };
+    }
 
     if (!token) {
       setAuthLoading(false);
@@ -98,7 +117,7 @@ export default function App() {
     return () => {
       active = false;
     };
-  }, [token]);
+  }, [token, isAdminDashboard]);
 
   // Login / Signup
   async function handleAuthSubmit(event) {
@@ -112,6 +131,17 @@ export default function App() {
     const password = form.get("password");
 
     try {
+      // Temporary demo-only admin login. Replace with a backend admin API later.
+      if (authMode === "admin") {
+        if (email === DEMO_ADMIN_EMAIL && password === DEMO_ADMIN_PASSWORD) {
+          sessionStorage.setItem(ADMIN_SESSION_KEY, "true");
+          setIsAdminAuthenticated(true);
+          window.location.href = "/admin/dashboard";
+          return;
+        }
+        throw new Error("Invalid admin email or password.");
+      }
+
       let data;
 
       if (authMode === "signup") {
@@ -131,6 +161,12 @@ export default function App() {
     } finally {
       setAuthLoading(false);
     }
+  }
+
+  function handleAdminLogout() {
+    sessionStorage.removeItem(ADMIN_SESSION_KEY);
+    setIsAdminAuthenticated(false);
+    window.location.href = "/";
   }
 
   function handleLogout() {
@@ -217,6 +253,11 @@ export default function App() {
   const activeRoute = routes.find(
     (route) => route.id === selectedRoute
   );
+
+  // Render the admin area only after the demo admin login succeeds.
+  if (isAdminDashboard && isAdminAuthenticated) {
+    return <AdminDashboard onLogout={handleAdminLogout} />;
+  }
 
   // Checking saved login
   if (authLoading) {
@@ -387,34 +428,32 @@ export default function App() {
             <button
               type="button"
               className={authMode === "login" ? "active" : ""}
-              onClick={() => {
-                setAuthMode("login");
-                setAuthError("");
-              }}
-            >
-              Login
-            </button>
-
+              onClick={() => { setAuthMode("login"); setAuthError(""); }}
+            >Login</button>
             <button
               type="button"
               className={authMode === "signup" ? "active" : ""}
-              onClick={() => {
-                setAuthMode("signup");
-                setAuthError("");
-              }}
-            >
-              Sign up
-            </button>
+              onClick={() => { setAuthMode("signup"); setAuthError(""); }}
+            >Sign up</button>
+            <button
+              type="button"
+              className={authMode === "admin" ? "active" : ""}
+              onClick={() => { setAuthMode("admin"); setAuthError(""); }}
+            >Admin</button>
           </div>
 
           <h2>
-            {authMode === "login"
+            {authMode === "admin"
+              ? "Administrator login"
+              : authMode === "login"
               ? "Welcome back!"
               : "Create your account"}
           </h2>
 
           <p className="auth-subtitle">
-            {authMode === "login"
+            {authMode === "admin"
+              ? "Sign in with your administrator credentials."
+              : authMode === "login"
               ? "Log in to access your route planner."
               : "Join SafeRoute and plan your journeys."}
           </p>
@@ -469,29 +508,33 @@ export default function App() {
             >
               {authLoading
                 ? "Please wait..."
+                : authMode === "admin"
+                ? "Admin sign in"
                 : authMode === "login"
                 ? "Log in"
                 : "Create account"}
             </button>
           </form>
 
-          <p className="auth-footer">
-            {authMode === "login"
-              ? "New to SafeRoute? "
-              : "Already have an account? "}
-
-            <button
-              type="button"
-              onClick={() => {
-                setAuthMode(
-                  authMode === "login" ? "signup" : "login"
-                );
-                setAuthError("");
-              }}
-            >
-              {authMode === "login" ? "Sign up" : "Log in"}
-            </button>
-          </p>
+          {authMode === "admin" ? (
+            <p className="auth-footer">
+              Not an administrator?{" "}
+              <button type="button" onClick={() => { setAuthMode("login"); setAuthError(""); }}>
+                User login
+              </button>
+              <br />
+              <span style={{ display: "block", marginTop: 12, color: "#94a3b8" }}>
+                Demo: admin@saferoute.demo / Admin@123
+              </span>
+            </p>
+          ) : (
+            <p className="auth-footer">
+              {authMode === "login" ? "New to SafeRoute? " : "Already have an account? "}
+              <button type="button" onClick={() => { setAuthMode(authMode === "login" ? "signup" : "login"); setAuthError(""); }}>
+                {authMode === "login" ? "Sign up" : "Log in"}
+              </button>
+            </p>
+          )}
         </div>
       </div>
     );
